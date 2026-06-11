@@ -15,28 +15,53 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/tpt-online-video/packages/media"
+	"github.com/tpt-online-video/packages/moderation"
 	"github.com/tpt-online-video/packages/storage"
 	"github.com/tpt-online-video/services/api/internal/http/middleware"
 )
 
+const (
+	// DefaultUploadExpiration is how long an upload session remains valid.
+	DefaultUploadExpiration = 2 * time.Hour
+
+	// DefaultMaxUploadBytes is the maximum allowed file size (10 GB).
+	DefaultMaxUploadBytes int64 = 10 * 1024 * 1024 * 1024
+)
+
 type UploadHandler struct {
-	logger  *slog.Logger
-	db      *pgxpool.Pool
-	redis   *redis.Client
-	storage storage.Provider
-	queue   *media.Queue
-	baseURL string
+	logger     *slog.Logger
+	db         *pgxpool.Pool
+	redis      *redis.Client
+	storage    storage.Provider
+	queue      *media.Queue
+	baseURL    string
+	scanner    moderation.Scanner
+	maxBytes   int64
 }
 
 func NewUploadHandler(logger *slog.Logger, db *pgxpool.Pool, redis *redis.Client, store storage.Provider, queue *media.Queue, baseURL string) *UploadHandler {
 	return &UploadHandler{
-		logger:  logger,
-		db:      db,
-		redis:   redis,
-		storage: store,
-		queue:   queue,
-		baseURL: baseURL,
+		logger:   logger,
+		db:       db,
+		redis:    redis,
+		storage:  store,
+		queue:    queue,
+		baseURL:  baseURL,
+		scanner:  moderation.NewNopScanner(),
+		maxBytes: DefaultMaxUploadBytes,
 	}
+}
+
+// WithScanner sets a malware scanner on the handler (for production use).
+func (h *UploadHandler) WithScanner(s moderation.Scanner) *UploadHandler {
+	h.scanner = s
+	return h
+}
+
+// WithMaxBytes sets a custom maximum file size limit.
+func (h *UploadHandler) WithMaxBytes(max int64) *UploadHandler {
+	h.maxBytes = max
+	return h
 }
 
 type CreateUploadRequest struct {
@@ -46,9 +71,23 @@ type CreateUploadRequest struct {
 }
 
 type CreateUploadResponse struct {
-	SessionID string `json:"session_id"`
-	UploadURL string `json:"upload_url"`
-	ExpiresAt string `json:"expires_at"`
+	SessionID       string `json:"session_id"`
+	UploadURL       string `json:"upload_url"`
+	UploadMethod    string `json:"upload_method"` // "presigned" or "chunked"
+	ExpiresAt       string `json:"expires_at"`
+	AllowedMIMETypes []string `json:"allowed_mime_types,omitempty"`
+	MaxBytes        int64  `json:"max_bytes"`
+}
+
+type UploadSessionStatus struct {
+	SessionID     string `json:"session_id"`
+	Filename      string `json:"filename"`
+	MimeType      string `json:"mime_type"`
+	ByteSize      int64  `json:"byte_size"`
+	ReceivedBytes int64  `json:"received_bytes"`
+	Status        string `json:"status"`
+	ExpiresAt     string `json:"expires_at"`
+	CreatedAt     string `json:"created_at"`
 }
 
 func (h *UploadHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
@@ -62,15 +101,42 @@ func (h *UploadHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get user from context (stub: hardcode a user ID for now until auth middleware is wired)
+	// --- Validation ---
+
+	// File type validation
+	if err := moderation.ValidateFileType(req.Filename, req.MimeType); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	// File size validation
+	if err := moderation.ValidateFileSize(req.ByteSize, h.maxBytes); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	// Get user from context
 	userID := getUserID(r.Context())
 	if userID == "" {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
 	}
 
-	expiresAt := time.Now().Add(2 * time.Hour)
+	// Build allowed MIME type list for response
+	allowedMIMEs := make([]string, 0, len(moderation.AllowedVideoMIMEs))
+	for mime := range moderation.AllowedVideoMIMEs {
+		allowedMIMEs = append(allowedMIMEs, mime)
+	}
+
+	expiresAt := time.Now().Add(DefaultUploadExpiration)
 	rawObjectKey := uuid.New().String() + "/" + req.Filename
+
+	// Determine whether to use presigned or chunked upload
+	usePresigned := req.ByteSize < 100*1024*1024 // < 100MB, use presigned
+	uploadMethod := "chunked"
+	if usePresigned {
+		uploadMethod = "presigned"
+	}
 
 	var sessionID string
 	err := h.db.QueryRow(r.Context(),
@@ -85,16 +151,25 @@ func (h *UploadHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	uploadURL, err := h.storage.PresignPut(r.Context(), "tpt-media", rawObjectKey, 2*time.Hour)
-	if err != nil {
-		// Fall back to API-based upload URL
+	var uploadURL string
+	if usePresigned {
+		uploadURL, err = h.storage.PresignPut(r.Context(), "tpt-media", rawObjectKey, DefaultUploadExpiration)
+		if err != nil {
+			// Fall back to API-based upload URL
+			uploadURL = h.baseURL + "/api/v1/upload/" + sessionID + "/chunk"
+			uploadMethod = "chunked"
+		}
+	} else {
 		uploadURL = h.baseURL + "/api/v1/upload/" + sessionID + "/chunk"
 	}
 
 	writeJSON(w, http.StatusCreated, CreateUploadResponse{
-		SessionID: sessionID,
-		UploadURL: uploadURL,
-		ExpiresAt: expiresAt.UTC().Format(time.RFC3339),
+		SessionID:       sessionID,
+		UploadURL:       uploadURL,
+		UploadMethod:    uploadMethod,
+		ExpiresAt:       expiresAt.UTC().Format(time.RFC3339),
+		AllowedMIMETypes: allowedMIMEs,
+		MaxBytes:        h.maxBytes,
 	})
 }
 
@@ -257,6 +332,155 @@ func (h *UploadHandler) CompleteUpload(w http.ResponseWriter, r *http.Request) {
 		VideoID: videoID,
 		Status:  "queued",
 	})
+}
+
+// CancelUpload cancels an in-progress upload session and cleans up any stored data.
+func (h *UploadHandler) CancelUpload(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "sessionID")
+
+	userID := getUserID(r.Context())
+	if userID == "" {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	// Get session and verify ownership
+	var status, rawObjectKey string
+	err := h.db.QueryRow(r.Context(),
+		`SELECT status, raw_object_key FROM upload_sessions WHERE id = $1 AND user_id = $2`,
+		sessionID, userID,
+	).Scan(&status, &rawObjectKey)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "session not found"})
+			return
+		}
+		h.logger.Error("get upload session for cancel", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "database error"})
+		return
+	}
+
+	if status == "complete" || status == "cancelled" || status == "expired" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "session already ended"})
+		return
+	}
+
+	// Mark session as cancelled
+	_, err = h.db.Exec(r.Context(),
+		`UPDATE upload_sessions SET status = 'cancelled', updated_at = now() WHERE id = $1`, sessionID,
+	)
+	if err != nil {
+		h.logger.Error("cancel upload session", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to cancel session"})
+		return
+	}
+
+	// Clean up uploaded data from storage if raw object key exists
+	if rawObjectKey != "" {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := h.storage.DeleteObject(ctx, "tpt-media", rawObjectKey); err != nil {
+				h.logger.Error("cleanup cancelled upload object", "error", err, "key", rawObjectKey)
+			}
+		}()
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status":     "cancelled",
+		"session_id": sessionID,
+	})
+}
+
+// GetUploadStatus returns the current status of an upload session.
+func (h *UploadHandler) GetUploadStatus(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "sessionID")
+
+	userID := getUserID(r.Context())
+	if userID == "" {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	var filename, mimeType, status string
+	var byteSize, receivedBytes int64
+	var expiresAt, createdAt time.Time
+	err := h.db.QueryRow(r.Context(),
+		`SELECT filename, mime_type, byte_size, received_bytes, status, expires_at, created_at
+		 FROM upload_sessions WHERE id = $1 AND user_id = $2`,
+		sessionID, userID,
+	).Scan(&filename, &mimeType, &byteSize, &receivedBytes, &status, &expiresAt, &createdAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "session not found"})
+			return
+		}
+		h.logger.Error("get upload session status", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "database error"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, UploadSessionStatus{
+		SessionID:     sessionID,
+		Filename:      filename,
+		MimeType:      mimeType,
+		ByteSize:      byteSize,
+		ReceivedBytes: receivedBytes,
+		Status:        status,
+		ExpiresAt:     expiresAt.UTC().Format(time.RFC3339),
+		CreatedAt:     createdAt.UTC().Format(time.RFC3339),
+	})
+}
+
+// ListUploadSessions returns all upload sessions for the authenticated user.
+func (h *UploadHandler) ListUploadSessions(w http.ResponseWriter, r *http.Request) {
+	userID := getUserID(r.Context())
+	if userID == "" {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	rows, err := h.db.Query(r.Context(),
+		`SELECT id, filename, mime_type, byte_size, received_bytes, status, expires_at, created_at
+		 FROM upload_sessions
+		 WHERE user_id = $1
+		 ORDER BY created_at DESC
+		 LIMIT 50`,
+		userID,
+	)
+	if err != nil {
+		h.logger.Error("list upload sessions", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "database error"})
+		return
+	}
+	defer rows.Close()
+
+	var sessions []UploadSessionStatus
+	for rows.Next() {
+		var sessionID, filename, mimeType, status string
+		var byteSize, receivedBytes int64
+		var expiresAt, createdAt time.Time
+		if err := rows.Scan(&sessionID, &filename, &mimeType, &byteSize, &receivedBytes, &status, &expiresAt, &createdAt); err != nil {
+			h.logger.Error("scan upload session row", "error", err)
+			continue
+		}
+		sessions = append(sessions, UploadSessionStatus{
+			SessionID:     sessionID,
+			Filename:      filename,
+			MimeType:      mimeType,
+			ByteSize:      byteSize,
+			ReceivedBytes: receivedBytes,
+			Status:        status,
+			ExpiresAt:     expiresAt.UTC().Format(time.RFC3339),
+			CreatedAt:     createdAt.UTC().Format(time.RFC3339),
+		})
+	}
+
+	if sessions == nil {
+		sessions = []UploadSessionStatus{}
+	}
+
+	writeJSON(w, http.StatusOK, sessions)
 }
 
 // getUserID extracts the user ID from request context.

@@ -9,12 +9,15 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/tpt-online-video/packages/auth"
+	"github.com/tpt-online-video/packages/storage"
+	svcauth "github.com/tpt-online-video/services/api/internal/auth"
 	"github.com/tpt-online-video/services/api/internal/config"
 	"github.com/tpt-online-video/services/api/internal/database"
 	httpapi "github.com/tpt-online-video/services/api/internal/http"
-	"github.com/tpt-online-video/packages/storage"
 )
 
 func main() {
@@ -48,7 +51,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	srv := httpapi.NewServer(logger, db, redisClient, store, cfg.BaseURL)
+	// Seed admin account if configured
+	if cfg.AdminEmail != "" && cfg.AdminPassword != "" {
+		seedAdmin(ctx, logger, db, cfg)
+	}
+
+	srv := httpapi.NewServer(logger, db, redisClient, store, cfg.BaseURL).
+		WithJWTSecret(cfg.JWTSecret, cfg.JWTAccessTTL).
+		WithFrontendURL(cfg.FrontendBaseURL)
+
 	if err := srv.EnsureQueueGroup(ctx); err != nil {
 		logger.Error("ensure queue group", "error", err)
 		os.Exit(1)
@@ -80,4 +91,58 @@ func main() {
 	}
 
 	logger.Info("api server stopped")
+}
+
+// seedAdmin creates the admin user on startup if configured.
+func seedAdmin(ctx context.Context, logger *slog.Logger, db *pgxpool.Pool, cfg config.Config) {
+	repo := svcauth.NewRepository(db)
+	hasher := auth.NewPasswordHasher()
+
+	// Check if admin already exists
+	existing, err := repo.GetUserByEmail(ctx, cfg.AdminEmail)
+	if err != nil {
+		logger.Error("check admin user", "error", err)
+		return
+	}
+	if existing != nil {
+		logger.Info("admin user already exists", "email", cfg.AdminEmail)
+		return
+	}
+
+	// Hash password
+	passwordHash, err := hasher.Hash(cfg.AdminPassword)
+	if err != nil {
+		logger.Error("hash admin password", "error", err)
+		return
+	}
+
+	// Create admin user
+	user, err := repo.CreateUser(ctx, cfg.AdminEmail, passwordHash, cfg.AdminDisplayName)
+	if err != nil {
+		logger.Error("create admin user", "error", err)
+		return
+	}
+
+	// Assign admin role
+	if err := repo.AssignDefaultRole(ctx, user.ID); err != nil {
+		logger.Error("assign admin default role", "error", err)
+	}
+
+	// Also assign admin role specifically
+	_, err = db.Exec(ctx,
+		`INSERT INTO user_roles (user_id, role_id)
+		 SELECT $1, id FROM roles WHERE name = 'admin'
+		 ON CONFLICT DO NOTHING`,
+		user.ID,
+	)
+	if err != nil {
+		logger.Error("assign admin role", "error", err)
+	}
+
+	// Verify email for admin
+	if err := repo.VerifyUserEmail(ctx, user.ID); err != nil {
+		logger.Error("verify admin email", "error", err)
+	}
+
+	logger.Info("admin user created", "email", cfg.AdminEmail, "display_name", cfg.AdminDisplayName)
 }

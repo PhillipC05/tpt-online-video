@@ -31,7 +31,23 @@ type Config struct {
 	JWTSecret        string
 	JWTAccessTTL     time.Duration
 	JWTRefreshTTL    time.Duration
+	FrontendBaseURL  string
 	MediaStreamBaseURL string
+
+	// Email settings
+	EmailProvider    string
+	EmailFromName    string
+	EmailFromAddress string
+	SMTPHost         string
+	SMTPPort         int
+	SMTPUsername     string
+	SMTPPassword     string
+	SMTPTLS          bool
+
+	// Admin seed account
+	AdminEmail        string
+	AdminPassword     string
+	AdminDisplayName  string
 }
 
 func Load() (Config, error) {
@@ -43,6 +59,8 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+
+	smtpPort, _ := strconv.Atoi(getenv("SMTP_PORT", "1025"))
 
 	cfg := Config{
 		AppEnv:      getenv("APP_ENV", "development"),
@@ -74,7 +92,21 @@ func Load() (Config, error) {
 		JWTSecret:        getenv("JWT_SECRET", "change-me-in-development"),
 		JWTAccessTTL:     accessTTL,
 		JWTRefreshTTL:    refreshTTL,
+		FrontendBaseURL:  getenv("FRONTEND_BASE_URL", "http://localhost:5173"),
 		MediaStreamBaseURL: getenv("MEDIA_STREAM_BASE_URL", "http://localhost:8080"),
+
+		EmailProvider:    getenv("EMAIL_PROVIDER", "log"),
+		EmailFromName:    getenv("EMAIL_FROM_NAME", "TPT Online Video"),
+		EmailFromAddress: getenv("EMAIL_FROM_ADDRESS", "noreply@tpt.local"),
+		SMTPHost:         getenv("SMTP_HOST", "localhost"),
+		SMTPPort:         smtpPort,
+		SMTPUsername:     getenv("SMTP_USERNAME", ""),
+		SMTPPassword:     getenv("SMTP_PASSWORD", ""),
+		SMTPTLS:          getenv("SMTP_TLS", "false") == "true",
+
+		AdminEmail:        getenv("ADMIN_EMAIL", ""),
+		AdminPassword:     getenv("ADMIN_PASSWORD", ""),
+		AdminDisplayName:  getenv("ADMIN_DISPLAY_NAME", "Admin"),
 	}
 
 	if cfg.JWTSecret == "change-me-in-development" && cfg.AppEnv == "production" {

@@ -509,13 +509,13 @@ Goal: Build a public, self-hostable, open-source YouTube-like platform with VOD,
 
 ## Phase 6 — Storage Abstraction (continued)
 
-- [ ] Implement multipart upload support
-- [ ] Implement presigned upload URLs
-- [ ] Implement presigned download URLs
-- [ ] Implement object metadata handling
-- [ ] Implement delete operations
-- [ ] Implement list operations
-- [ ] Add storage provider tests
+- [x] Implement multipart upload support
+- [x] Implement presigned upload URLs
+- [x] Implement presigned download URLs
+- [x] Implement object metadata handling
+- [x] Implement delete operations
+- [x] Implement list operations
+- [x] Add storage provider tests
 
 ## Phase 7 — Upload System (continued)
 
