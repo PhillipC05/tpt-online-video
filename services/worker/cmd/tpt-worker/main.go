@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -68,13 +69,32 @@ func main() {
 		os.Exit(1)
 	}
 
-	proc := processor.New(logger, db, redisClient, store, queue, cfg.WorkDir)
+	scaler := media.NewScalingController(queue, cfg.Scaler, logger)
+	proc := processor.New(logger, db, redisClient, store, queue, cfg.WorkDir).
+		WithScaler(scaler)
+
+	// Expose Prometheus-compatible metrics on a dedicated port.
+	metricsAddr := cfg.MetricsAddr
+	mux := http.NewServeMux()
+	mux.HandleFunc("/metrics", proc.Metrics().Handler())
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	go func() {
+		logger.Info("metrics server listening", "addr", metricsAddr)
+		if err := http.ListenAndServe(metricsAddr, mux); err != nil && err != http.ErrServerClosed {
+			logger.Error("metrics server error", "error", err)
+		}
+	}()
 
 	logger.Info("worker started",
 		"name", cfg.WorkerName,
 		"concurrency", cfg.Concurrency,
+		"scaler_min", cfg.Scaler.MinWorkers,
+		"scaler_max", cfg.Scaler.MaxWorkers,
 		"storage", store.Name(),
 		"work_dir", cfg.WorkDir,
+		"metrics_addr", metricsAddr,
 	)
 
 	proc.Run(ctx, cfg.Concurrency)

@@ -9,6 +9,8 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+const heartbeatTTL = 60 * time.Second
+
 // Job represents a transcoding job in the queue.
 type Job struct {
 	ID              string `json:"id"`
@@ -27,17 +29,31 @@ type Queue struct {
 	streamKey string
 	groupName string
 	consumer  string
+	dlqKey    string
 }
 
 // NewQueue creates a new Queue backed by Redis Streams.
+// The dead-letter stream key is derived as streamKey + ":dlq".
 func NewQueue(client *redis.Client, streamKey, groupName, consumer string) *Queue {
 	return &Queue{
 		client:    client,
 		streamKey: streamKey,
 		groupName: groupName,
 		consumer:  consumer,
+		dlqKey:    streamKey + ":dlq",
 	}
 }
+
+// DeadLetterEntry wraps a Job that has exhausted all retry attempts.
+type DeadLetterEntry struct {
+	Job       *Job   `json:"job"`
+	DeadAt    int64  `json:"dead_at"`
+	Reason    string `json:"reason"`
+	OrigMsgID string `json:"orig_msg_id"`
+}
+
+// DLQKey returns the dead-letter stream key.
+func (q *Queue) DLQKey() string { return q.dlqKey }
 
 // EnsureGroup creates the stream and consumer group if they don't exist.
 func (q *Queue) EnsureGroup(ctx context.Context) error {
@@ -118,4 +134,58 @@ func (q *Queue) Nack(ctx context.Context, messageID string) error {
 		MinIdle:  0,
 		Messages: []string{messageID},
 	}).Err()
+}
+
+// NackWithAttempt acks the original message, increments the attempt count on
+// the job, and re-enqueues it for retry. If the job has reached MaxAttempts,
+// it is moved to the dead-letter queue instead.
+func (q *Queue) NackWithAttempt(ctx context.Context, messageID string, job *Job, reason string) error {
+	job.Attempt++
+	if job.MaxAttempts > 0 && job.Attempt >= job.MaxAttempts {
+		return q.MoveToDeadLetter(ctx, messageID, job, reason)
+	}
+	// Ack original then re-enqueue with the updated attempt count.
+	if err := q.Ack(ctx, messageID); err != nil {
+		return fmt.Errorf("ack before retry: %w", err)
+	}
+	if _, err := q.Enqueue(ctx, job); err != nil {
+		return fmt.Errorf("re-enqueue: %w", err)
+	}
+	return nil
+}
+
+// MoveToDeadLetter acks the message from the main stream and appends it to the
+// dead-letter stream. Both operations execute in a single pipeline.
+func (q *Queue) MoveToDeadLetter(ctx context.Context, messageID string, job *Job, reason string) error {
+	entry := &DeadLetterEntry{
+		Job:       job,
+		DeadAt:    time.Now().Unix(),
+		Reason:    reason,
+		OrigMsgID: messageID,
+	}
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return fmt.Errorf("marshal dlq entry: %w", err)
+	}
+	pipe := q.client.Pipeline()
+	pipe.XAdd(ctx, &redis.XAddArgs{
+		Stream: q.dlqKey,
+		Values: map[string]any{"payload": string(data)},
+	})
+	pipe.XAck(ctx, q.streamKey, q.groupName, messageID)
+	_, err = pipe.Exec(ctx)
+	return err
+}
+
+// Heartbeat writes a keep-alive record for this consumer to Redis with a TTL
+// of 60 s. Expired keys indicate dead workers.
+func (q *Queue) Heartbeat(ctx context.Context, activeJobs int) error {
+	key := "worker:heartbeat:" + q.consumer
+	data, _ := json.Marshal(map[string]any{
+		"last_seen":   time.Now().Unix(),
+		"consumer":    q.consumer,
+		"stream":      q.streamKey,
+		"active_jobs": activeJobs,
+	})
+	return q.client.Set(ctx, key, data, heartbeatTTL).Err()
 }

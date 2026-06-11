@@ -128,6 +128,8 @@ func (s *Server) Routes() http.Handler {
 	emailSender := auth.NewEmailSender(emailCfg)
 	authHandler := handlers.NewAuthHandler(s.logger, s.db, emailSender, authSvcCfg, authMW)
 
+	videoHandler := handlers.NewVideoHandler(s.logger, s.db, s.redis, s.storage, s.baseURL)
+
 	// Public routes (no auth required)
 	r.Group(func(r chi.Router) {
 		r.Use(rateLimiter.Middleware)
@@ -139,10 +141,11 @@ func (s *Server) Routes() http.Handler {
 			middleware.WriteOK(w, map[string]string{"message": "pong"})
 		})
 
-		// Public video listing
-		videoHandler := handlers.NewVideoHandler(s.logger, s.db, s.redis, s.storage, s.baseURL)
-		r.Get("/api/v1/videos", videoHandler.ListVideos)
-		r.Get("/api/v1/videos/{videoID}", videoHandler.GetVideo)
+		// Public video listing; GetVideo uses optional auth so private videos
+		// can be gated by ownership without requiring auth on public videos.
+		r.With(authMW.OptionalAuthMiddleware).Get("/api/v1/videos", videoHandler.ListVideos)
+		r.With(authMW.OptionalAuthMiddleware).Get("/api/v1/videos/{videoID}", videoHandler.GetVideo)
+		r.Get("/api/v1/videos/{videoID}/related", videoHandler.RelatedVideos)
 
 		// Auth routes (public - register, login, refresh, forgot/reset password)
 		r.Group(func(r chi.Router) {
@@ -167,6 +170,11 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/api/v1/auth/me", authHandler.GetMe)
 		r.Get("/api/v1/auth/sessions", authHandler.GetSessions)
 		r.Delete("/api/v1/auth/sessions/{sessionID}", authHandler.RevokeSession)
+
+		// Owned video routes (update, delete, signed URL refresh)
+		r.Patch("/api/v1/videos/{videoID}", videoHandler.UpdateVideo)
+		r.Delete("/api/v1/videos/{videoID}", videoHandler.DeleteVideo)
+		r.Get("/api/v1/videos/{videoID}/signed-urls", videoHandler.GetSignedURLs)
 
 		// Upload routes (upload requires auth)
 		uploadHandler := handlers.NewUploadHandler(s.logger, s.db, s.redis, s.storage, s.queue, s.baseURL)

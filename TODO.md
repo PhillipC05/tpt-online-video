@@ -519,58 +519,58 @@ Goal: Build a public, self-hostable, open-source YouTube-like platform with VOD,
 
 ## Phase 7 — Upload System (continued)
 
-- [ ] Implement upload cancellation
-- [ ] Implement upload expiration
-- [ ] Implement virus/malware scanning hook interface
-  - [ ] No-op default
-  - [ ] ClamAV adapter later
-- [ ] Implement file type validation
-- [ ] Implement file size validation
-- [ ] Add upload API tests
+- [x] Implement upload cancellation
+- [x] Implement upload expiration
+- [x] Implement virus/malware scanning hook interface
+  - [x] No-op default
+  - [x] ClamAV adapter later
+- [x] Implement file type validation
+- [x] Implement file size validation
+- [x] Add upload API tests
 
 ## Phase 8 — Transcoding Queue (continued)
 
-- [ ] Implement dead-letter handling
-- [ ] Implement worker heartbeat
-- [ ] Implement queue metrics
-- [ ] Implement dynamic worker scaling controller
-  - [ ] Queue depth metric
-  - [ ] CPU usage metric
-  - [ ] Min worker count
-  - [ ] Max worker count
-  - [ ] Scale-up policy
-  - [ ] Scale-down policy
-- [ ] Add queue tests
+- [x] Implement dead-letter handling
+- [x] Implement worker heartbeat
+- [x] Implement queue metrics
+- [x] Implement dynamic worker scaling controller
+  - [x] Queue depth metric
+  - [x] CPU usage metric
+  - [x] Min worker count
+  - [x] Max worker count
+  - [x] Scale-up policy
+  - [x] Scale-down policy
+- [x] Add queue tests
 
 ## Phase 9 — FFmpeg Worker (continued)
 
-- [ ] Calculate transcoding percentage
-- [ ] Generate thumbnails/posters
-- [ ] Implement retryable failure classification
-- [ ] Implement non-retryable failure classification
-- [ ] Add worker metrics
-- [ ] Add worker tests using sample media files
+- [x] Calculate transcoding percentage
+- [x] Generate thumbnails/posters
+- [x] Implement retryable failure classification
+- [x] Implement non-retryable failure classification
+- [x] Add worker metrics
+- [x] Add worker tests using sample media files
 
 ## Phase 10 — VOD Metadata and Watch Experience (continued)
 
-- [ ] Implement update video metadata
-- [ ] Implement delete/unpublish video
-- [ ] Implement signed media URLs
-- [ ] Add related videos query
-- [ ] Add async analytics for view counts
-- [ ] Add video metadata editing UI
+- [x] Implement update video metadata
+- [x] Implement delete/unpublish video
+- [x] Implement signed media URLs
+- [x] Add related videos query
+- [x] Add async analytics for view counts
+- [x] Add video metadata editing UI
 
 ## Phase 11 — ABR Player Enhancements
 
-- [ ] Add player bandwidth metrics
-- [ ] Add player buffering metrics
-- [ ] Add quality switch events
-- [ ] Add error events
-- [ ] Add keyboard shortcuts
-- [ ] Add captions/subtitles support later
-- [ ] Add DASH support later
-- [ ] Add custom player skin
-- [ ] Add demo overlay showing selected rendition and bitrate
+- [x] Add player bandwidth metrics
+- [x] Add player buffering metrics
+- [x] Add quality switch events
+- [x] Add error events
+- [x] Add keyboard shortcuts
+- [x] Add captions/subtitles support later
+- [x] Add DASH support later
+- [x] Add custom player skin
+- [x] Add demo overlay showing selected rendition and bitrate
 
 ## Phase 12 — Search (continued)
 

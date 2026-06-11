@@ -2,13 +2,19 @@ package media
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/tpt-online-video/packages/storage"
 )
+
+// ErrNoSubtitleStream is returned by ExtractSubtitles when the source file
+// contains no subtitle stream.
+var ErrNoSubtitleStream = errors.New("no subtitle stream found")
 
 // HLSRendition defines a single HLS output rendition.
 type HLSRendition struct {
@@ -56,23 +62,72 @@ func Probe(filePath string) (*FFprobeOutput, error) {
 }
 
 func parseFFprobeJSON(data []byte) (*FFprobeOutput, error) {
-	// Simple JSON parsing without external dependency
-	// In production, use encoding/json with a struct. This is a lightweight approach.
-	output := string(data)
 	result := &FFprobeOutput{}
 
-	if idx := strings.Index(output, `"duration"`); idx >= 0 {
-		rest := output[idx:]
-		start := strings.Index(rest, `"`)
-		if start >= 0 {
-			rest = rest[start+1:]
-			end := strings.Index(rest, `"`)
-			if end >= 0 {
-				result.DurationSeconds, _ = strconv.ParseFloat(rest[start+1:start+1+end], 64)
+	// Extract "duration": "123.456" or "duration": 123.456
+	if v, ok := extractJSONStringOrNumber(string(data), "duration"); ok {
+		result.DurationSeconds, _ = strconv.ParseFloat(v, 64)
+	}
+	// Width and height come from video stream fields.
+	if v, ok := extractJSONStringOrNumber(string(data), "width"); ok {
+		w, _ := strconv.Atoi(v)
+		result.Width = w
+	}
+	if v, ok := extractJSONStringOrNumber(string(data), "height"); ok {
+		h, _ := strconv.Atoi(v)
+		result.Height = h
+	}
+	// r_frame_rate is "30/1" or "30000/1001"
+	if v, ok := extractJSONStringOrNumber(string(data), "r_frame_rate"); ok {
+		parts := strings.SplitN(v, "/", 2)
+		if len(parts) == 2 {
+			num, _ := strconv.ParseFloat(parts[0], 64)
+			den, _ := strconv.ParseFloat(parts[1], 64)
+			if den != 0 {
+				result.FPS = num / den
 			}
 		}
 	}
 	return result, nil
+}
+
+// extractJSONStringOrNumber finds the value of a JSON key in raw JSON text.
+// It handles both string values ("key": "val") and numeric values ("key": 123).
+// Returns the raw value string and true if found.
+func extractJSONStringOrNumber(json, key string) (string, bool) {
+	needle := `"` + key + `"`
+	idx := strings.Index(json, needle)
+	if idx < 0 {
+		return "", false
+	}
+	rest := json[idx+len(needle):]
+	// Skip whitespace and colon.
+	i := 0
+	for i < len(rest) && (rest[i] == ' ' || rest[i] == '\t' || rest[i] == ':' || rest[i] == '\n' || rest[i] == '\r') {
+		i++
+	}
+	if i >= len(rest) {
+		return "", false
+	}
+	rest = rest[i:]
+	if rest[0] == '"' {
+		// Quoted string: find closing quote.
+		end := strings.Index(rest[1:], `"`)
+		if end < 0 {
+			return "", false
+		}
+		return rest[1 : 1+end], true
+	}
+	// Numeric or other: read until delimiter.
+	end := strings.IndexAny(rest, ",}\n\r ")
+	if end < 0 {
+		end = len(rest)
+	}
+	val := strings.TrimSpace(rest[:end])
+	if val == "" {
+		return "", false
+	}
+	return val, true
 }
 
 // BuildHLSCommand builds an FFmpeg command that generates HLS renditions from a source file.
@@ -121,6 +176,128 @@ func BuildHLSCommand(inputPath, outputDir string, renditions []HLSRendition) *ex
 	)
 
 	return exec.Command("ffmpeg", args...)
+}
+
+// ParseFFmpegTimecode parses the wall-clock position from a chunk of FFmpeg stderr.
+// FFmpeg writes lines like: "frame=  123 fps= 25 … time=00:01:23.45 bitrate=…"
+// Returns the latest parsed position in seconds, or -1 if none was found.
+func ParseFFmpegTimecode(output string) float64 {
+	latest := float64(-1)
+	remaining := output
+	for {
+		idx := strings.Index(remaining, "time=")
+		if idx < 0 {
+			break
+		}
+		timeStr := remaining[idx+5:]
+		end := strings.IndexAny(timeStr, " \t\n\r")
+		if end > 0 {
+			timeStr = timeStr[:end]
+		}
+		var h, m int
+		var s float64
+		if n, _ := fmt.Sscanf(timeStr, "%d:%d:%f", &h, &m, &s); n == 3 {
+			latest = float64(h*3600+m*60) + s
+		}
+		remaining = remaining[idx+5:]
+	}
+	return latest
+}
+
+// GenerateThumbnail extracts a single frame from inputPath at seekSec seconds and
+// writes a JPEG to destPath. Quality 2 is near-lossless (1=best, 31=worst).
+func GenerateThumbnail(inputPath, destPath string, seekSec float64) error {
+	args := []string{
+		"-ss", fmt.Sprintf("%.3f", seekSec),
+		"-i", inputPath,
+		"-frames:v", "1",
+		"-q:v", "2",
+		"-y",
+		destPath,
+	}
+	cmd := exec.Command("ffmpeg", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("ffmpeg thumbnail: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// BuildDASHCommand builds an FFmpeg command that generates a MPEG-DASH manifest and
+// fragmented MP4 segments for all renditions. All output files land in outputDir;
+// the top-level manifest is outputDir/manifest.mpd.
+func BuildDASHCommand(inputPath, outputDir string, renditions []HLSRendition) *exec.Cmd {
+	var filterComplexParts []string
+
+	for i, r := range renditions {
+		filterComplexParts = append(filterComplexParts,
+			fmt.Sprintf("[0:v]scale=w=%d:h=%d:force_original_aspect_ratio=decrease,setdar=%d/%d[v%d]",
+				r.Width, r.Height, r.Width, r.Height, i))
+	}
+
+	args := []string{
+		"-i", inputPath,
+		"-preset", "fast",
+		"-g", "48",
+		"-sc_threshold", "0",
+	}
+
+	if len(filterComplexParts) > 0 {
+		args = append(args, "-filter_complex", strings.Join(filterComplexParts, "; "))
+	}
+
+	for i, r := range renditions {
+		args = append(args,
+			"-map", fmt.Sprintf("[v%d]", i),
+			"-c:v", "libx264",
+			"-profile:v", "high",
+			"-b:v", fmt.Sprintf("%dk", r.Bitrate),
+			"-r", r.FrameRate,
+			"-maxrate", fmt.Sprintf("%dk", r.Bitrate+r.Bitrate/2),
+			"-bufsize", fmt.Sprintf("%dk", r.Bitrate*2),
+			"-crf", "23",
+		)
+	}
+
+	args = append(args,
+		"-map", "0:a?",
+		"-c:a", "aac",
+		"-b:a", "128k",
+		"-ar", "44100",
+		"-f", "dash",
+		"-seg_duration", "4",
+		"-use_template", "1",
+		"-use_timeline", "1",
+		"-init_seg_name", "init_$RepresentationID$.mp4",
+		"-media_seg_name", "chunk_$RepresentationID$_$Number%05d$.m4s",
+		"-y",
+		filepath.Join(outputDir, "manifest.mpd"),
+	)
+
+	return exec.Command("ffmpeg", args...)
+}
+
+// ExtractSubtitles extracts the first subtitle stream from inputPath as a WebVTT
+// file at destPath. Returns ErrNoSubtitleStream if no subtitle track is present.
+func ExtractSubtitles(inputPath, destPath string) error {
+	cmd := exec.Command("ffmpeg",
+		"-i", inputPath,
+		"-map", "0:s:0",
+		"-f", "webvtt",
+		"-y",
+		destPath,
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		s := string(out)
+		if strings.Contains(s, "matches no streams") ||
+			strings.Contains(s, "Stream specifier 0:s:0") ||
+			strings.Contains(s, "no subtitle") {
+			return ErrNoSubtitleStream
+		}
+		return fmt.Errorf("extract subtitles: %w: %s", err, strings.TrimSpace(s))
+	}
+	return nil
 }
 
 // UploadHLSRenditions uploads all HLS files from a local output directory to storage.

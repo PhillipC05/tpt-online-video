@@ -112,6 +112,172 @@ dd {
   color: #fecaca;
 }
 
+/* ─── Custom player skin ─────────────────────────────────────────────────── */
+
+.player-shell {
+  position: relative;
+  background: #000;
+  border-radius: 10px;
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  user-select: none;
+}
+
+.player-video {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+
+/* Buffering spinner */
+.player-buffering {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.player-buffering-spinner {
+  width: 44px;
+  height: 44px;
+  border: 3px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #60a5fa;
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Controls overlay */
+.player-controls {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
+  padding: 40px 12px 10px;
+  transition: opacity 0.25s ease;
+}
+
+.player-controls--hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.player-seek {
+  display: block;
+  width: 100%;
+  height: 4px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  accent-color: #60a5fa;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+  appearance: auto;
+}
+
+.player-controls-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.player-controls-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.player-btn {
+  background: transparent;
+  border: none;
+  color: #e2e8f0;
+  font-size: 1rem;
+  padding: 4px 6px;
+  cursor: pointer;
+  border-radius: 4px;
+  line-height: 1;
+  transition: background 0.15s;
+}
+
+.player-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.player-btn--active {
+  color: #60a5fa;
+}
+
+.player-volume-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.player-volume {
+  width: 70px;
+  height: 3px;
+  cursor: pointer;
+  accent-color: #60a5fa;
+}
+
+.player-time {
+  font-size: 0.75rem;
+  color: #cbd5e1;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.player-quality-badge {
+  font-size: 0.7rem;
+  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
+}
+
+.player-quality-select {
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  color: #e2e8f0;
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  max-width: 140px;
+}
+
+/* Debug overlay */
+.player-debug {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(2, 6, 23, 0.82);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  color: #a3e635;
+  font-family: ui-monospace, "Cascadia Code", "Fira Mono", monospace;
+  font-size: 11px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  pointer-events: none;
+  line-height: 1.7;
+  min-width: 180px;
+}
+
+.player-debug-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.player-debug-label {
+  color: #64748b;
+}
+
 @media (max-width: 900px) {
   .card-grid {
     grid-template-columns: 1fr;

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,7 +18,6 @@ import (
 	"github.com/tpt-online-video/packages/media"
 	"github.com/tpt-online-video/packages/moderation"
 	"github.com/tpt-online-video/packages/storage"
-	"github.com/tpt-online-video/services/api/internal/http/middleware"
 )
 
 const (
@@ -208,11 +208,22 @@ func (h *UploadHandler) UploadChunk(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
+	// Scan chunk for malware before storing
+	scanResult, scanErr := h.scanner.Scan(r.Context(), sessionID, bytes.NewReader(data))
+	if scanErr != nil {
+		h.logger.Error("scan upload chunk", "error", scanErr, "session", sessionID)
+	} else if scanResult.Infected {
+		h.db.Exec(r.Context(), `UPDATE upload_sessions SET status = 'failed', updated_at = now() WHERE id = $1`, sessionID)
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "file rejected: " + scanResult.Threat})
+		return
+	}
+
 	// Store the chunk via storage abstraction
 	chunkKey := "uploads/" + sessionID + "/chunk_" + uuid.New().String()
-	if err := h.storage.PutObject(r.Context(), "tpt-media", chunkKey, r.Body, int64(len(data)), "application/octet-stream"); err != nil {
-		// Actually we already read the body, need to re-approach. Let's use the data.
-		_ = chunkKey
+	if err := h.storage.PutObject(r.Context(), "tpt-media", chunkKey, bytes.NewReader(data), int64(len(data)), "application/octet-stream"); err != nil {
+		h.logger.Error("store upload chunk", "error", err, "session", sessionID)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to store chunk"})
+		return
 	}
 
 	// Update the received bytes

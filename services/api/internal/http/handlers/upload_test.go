@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -417,6 +418,97 @@ func TestNopScanner(t *testing.T) {
 	}
 	if result.Threat != "" {
 		t.Errorf("expected empty threat, got %q", result.Threat)
+	}
+}
+
+func TestUploadChunk(t *testing.T) {
+	h := testUploadHandler(t)
+	sessionID := createTestSession(t, h)
+
+	chunkData := bytes.Repeat([]byte("a"), 1024)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/upload/"+sessionID+"/chunk", bytes.NewReader(chunkData))
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req = withTestUserContext(req, "test-user-id")
+	req = setupChiContext(req, map[string]string{"sessionID": sessionID})
+
+	w := httptest.NewRecorder()
+	h.UploadChunk(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("UploadChunk() status = %d, want %d; body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp ChunkUploadResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if resp.ReceivedBytes != int64(len(chunkData)) {
+		t.Errorf("expected received_bytes=%d, got %d", len(chunkData), resp.ReceivedBytes)
+	}
+	if resp.Status != "uploading" {
+		t.Errorf("expected status 'uploading', got %q", resp.Status)
+	}
+}
+
+func TestCompleteUpload(t *testing.T) {
+	h := testUploadHandler(t)
+	sessionID := createTestSession(t, h)
+
+	// Upload a small chunk to put session in uploading state
+	chunkData := bytes.Repeat([]byte("b"), 512)
+	chunkReq := httptest.NewRequest(http.MethodPost, "/api/v1/upload/"+sessionID+"/chunk", bytes.NewReader(chunkData))
+	chunkReq.Header.Set("Content-Type", "application/octet-stream")
+	chunkReq = withTestUserContext(chunkReq, "test-user-id")
+	chunkReq = setupChiContext(chunkReq, map[string]string{"sessionID": sessionID})
+	h.UploadChunk(httptest.NewRecorder(), chunkReq)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/upload/"+sessionID+"/complete", nil)
+	req = withTestUserContext(req, "test-user-id")
+	req = setupChiContext(req, map[string]string{"sessionID": sessionID})
+
+	w := httptest.NewRecorder()
+	h.CompleteUpload(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Errorf("CompleteUpload() status = %d, want %d; body=%s", w.Code, http.StatusCreated, w.Body.String())
+	}
+
+	var resp CompleteUploadResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if resp.VideoID == "" {
+		t.Error("expected non-empty video_id")
+	}
+	if resp.Status != "queued" {
+		t.Errorf("expected status 'queued', got %q", resp.Status)
+	}
+}
+
+// infectedScanner is a test scanner that always reports the content as infected.
+type infectedScanner struct{}
+
+func (s *infectedScanner) Scan(_ context.Context, _ string, _ io.Reader) (*moderation.ScanResult, error) {
+	return &moderation.ScanResult{Infected: true, Threat: "Test.Malware.Generic"}, nil
+}
+func (s *infectedScanner) Name() string { return "infected-test" }
+
+func TestScannerRejectsInfectedChunk(t *testing.T) {
+	h := testUploadHandler(t)
+	h.scanner = &infectedScanner{}
+
+	sessionID := createTestSession(t, h)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/upload/"+sessionID+"/chunk", bytes.NewReader([]byte("malicious content")))
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req = withTestUserContext(req, "test-user-id")
+	req = setupChiContext(req, map[string]string{"sessionID": sessionID})
+
+	w := httptest.NewRecorder()
+	h.UploadChunk(w, req)
+
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf("UploadChunk() with infected file status = %d, want %d; body=%s", w.Code, http.StatusUnprocessableEntity, w.Body.String())
 	}
 }
 
