@@ -1,0 +1,11 @@
+<service>
+  <id>{{SERVICE_NAME}}</id>
+  <name>{{SERVICE_NAME}}</name>
+  <displayname>{{DISPLAY_NAME}}</displayname>
+  <description>TPT Online Video service</description>
+  <executable>{{EXECUTABLE}}</executable>
+  <arguments></arguments>
+  <logmode>rotate</logmode>
+  <onfailure action="restart" delay="5 sec"/>
+  <delayedAutoStart>true</delayedAutoStart>
+</service>

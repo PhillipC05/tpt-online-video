@@ -1,0 +1,198 @@
+# TPT Online Video — Production Docker Compose
+#
+# Fully containerized deployment. All services run in Docker containers.
+# Usage: docker compose -f docker-compose.prod.yml up -d
+#
+# Pre-build images (or build locally with `make docker-build`):
+#   docker compose -f docker-compose.prod.yml build
+
+services:
+  # ── Infrastructure ──────────────────────────────────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: tpt-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-tpt}
+      POSTGRES_USER: ${POSTGRES_USER:-tpt}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tpt}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - tpt-postgres-data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tpt} -d ${POSTGRES_DB:-tpt}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: tpt-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - tpt-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: tpt-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-tpt}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-tpt123456}
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - tpt-minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: tpt-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-tpt} ${MINIO_ROOT_PASSWORD:-tpt123456} &&
+      mc mb --ignore-existing local/tpt-media &&
+      mc mb --ignore-existing local/tpt-live &&
+      mc mb --ignore-existing local/tpt-cache &&
+      exit 0
+      "
+
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: tpt-mediamtx
+    restart: unless-stopped
+    ports:
+      - "1935:1935"
+      - "8888:8888"
+      - "8889:8889"
+      - "8189:8189"
+    volumes:
+      - ./infra/docker/mediamtx/mediamtx.yml:/mediamtx.yml:ro
+    command: ["/mediamtx.yml"]
+
+  # ── TPT Services ────────────────────────────────────────────────
+
+  tpt-api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    container_name: tpt-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      TPT_DATABASE_HOST: postgres
+      TPT_DATABASE_PORT: "5432"
+      TPT_DATABASE_NAME: ${POSTGRES_DB:-tpt}
+      TPT_DATABASE_USER: ${POSTGRES_USER:-tpt}
+      TPT_DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-tpt}
+      TPT_REDIS_ADDR: redis:6379
+      TPT_STORAGE_PROVIDER: ${TPT_STORAGE_PROVIDER:-minio}
+      TPT_STORAGE_S3_ENDPOINT: http://minio:9000
+      TPT_STORAGE_S3_REGION: us-east-1
+      TPT_STORAGE_S3_BUCKET: tpt-media
+      TPT_STORAGE_S3_ACCESS_KEY: ${MINIO_ROOT_USER:-tpt}
+      TPT_STORAGE_S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-tpt123456}
+      TPT_SERVER_HOST: "0.0.0.0"
+      TPT_SERVER_PORT: "8080"
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  tpt-worker:
+    build:
+      context: .
+      dockerfile: services/worker/Dockerfile
+    container_name: tpt-worker
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      tpt-api:
+        condition: service_started
+    environment:
+      TPT_REDIS_ADDR: redis:6379
+      TPT_STORAGE_PROVIDER: ${TPT_STORAGE_PROVIDER:-minio}
+      TPT_STORAGE_S3_ENDPOINT: http://minio:9000
+      TPT_STORAGE_S3_REGION: us-east-1
+      TPT_STORAGE_S3_BUCKET: tpt-media
+      TPT_STORAGE_S3_ACCESS_KEY: ${MINIO_ROOT_USER:-tpt}
+      TPT_STORAGE_S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-tpt123456}
+      TPT_MEDIA_FFMPEG_PATH: /usr/bin/ffmpeg
+      TPT_MEDIA_FFPROBE_PATH: /usr/bin/ffprobe
+    volumes:
+      - tpt-worker-data:/tmp
+
+  tpt-live:
+    build:
+      context: .
+      dockerfile: services/live/Dockerfile
+    container_name: tpt-live
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      TPT_REDIS_ADDR: redis:6379
+      TPT_SERVER_HOST: "0.0.0.0"
+      TPT_SERVER_PORT: "8081"
+    ports:
+      - "127.0.0.1:8081:8081"
+
+  # ── Reverse Proxy ──────────────────────────────────────────────
+
+  nginx:
+    image: nginx:alpine
+    container_name: tpt-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/docker/nginx/tpt-prod.conf:/etc/nginx/conf.d/default.conf:ro
+      - tpt-frontend-dist:/usr/share/nginx/html:ro
+    depends_on:
+      - tpt-api
+
+  frontend-builder:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: tpt-frontend-builder
+    volumes:
+      - tpt-frontend-dist:/usr/share/nginx/html
+    command: /bin/sh -c "cp -r /usr/share/nginx/html/* /dist/ || true"
+
+volumes:
+  tpt-postgres-data:
+  tpt-redis-data:
+  tpt-minio-data:
+  tpt-worker-data:
+  tpt-frontend-dist:

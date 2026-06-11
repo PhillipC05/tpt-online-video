@@ -1,0 +1,13 @@
+go 1.22
+
+use (
+	./packages/shared
+	./packages/storage
+	./packages/search
+	./packages/auth
+	./packages/media
+	./packages/moderation
+	./services/api
+	./services/worker
+	./services/live
+)

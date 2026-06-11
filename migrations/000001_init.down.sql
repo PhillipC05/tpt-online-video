@@ -1,0 +1,37 @@
+DROP TABLE IF EXISTS search_documents CASCADE;
+DROP TABLE IF EXISTS audit_log CASCADE;
+DROP TABLE IF EXISTS moderation_actions CASCADE;
+DROP TABLE IF EXISTS moderation_reports CASCADE;
+DROP TABLE IF EXISTS live_stream_reports CASCADE;
+DROP TABLE IF EXISTS live_chat_messages CASCADE;
+DROP TABLE IF EXISTS live_streams CASCADE;
+DROP TABLE IF EXISTS comment_reports CASCADE;
+DROP TABLE IF EXISTS comments CASCADE;
+DROP TABLE IF EXISTS transcode_jobs CASCADE;
+DROP TABLE IF EXISTS upload_sessions CASCADE;
+DROP TABLE IF EXISTS video_renditions CASCADE;
+DROP TABLE IF EXISTS videos CASCADE;
+DROP TABLE IF EXISTS user_roles CASCADE;
+DROP TABLE IF EXISTS role_permissions CASCADE;
+DROP TABLE IF EXISTS permissions CASCADE;
+DROP TABLE IF EXISTS roles CASCADE;
+DROP TABLE IF EXISTS refresh_tokens CASCADE;
+DROP TABLE IF EXISTS oauth_accounts CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
+
+DROP FUNCTION IF EXISTS update_search_vector();
+DROP FUNCTION IF EXISTS set_updated_at();
+
+DROP TYPE IF EXISTS moderation_action_type;
+DROP TYPE IF EXISTS moderation_report_status;
+DROP TYPE IF EXISTS live_stream_status;
+DROP TYPE IF EXISTS comment_status;
+DROP TYPE IF EXISTS transcode_job_status;
+DROP TYPE IF EXISTS upload_status;
+DROP TYPE IF EXISTS rendition_status;
+DROP TYPE IF EXISTS video_status;
+DROP TYPE IF EXISTS video_visibility;
+DROP TYPE IF EXISTS user_status;
+
+DROP EXTENSION IF EXISTS citext;
+DROP EXTENSION IF EXISTS pgcrypto;

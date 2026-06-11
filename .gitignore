@@ -1,0 +1,57 @@
+# Local environment
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+
+# Go
+bin/
+*.test
+*.out
+coverage.out
+
+# Node
+node_modules/
+dist/
+build/
+.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Logs
+logs/
+*.log
+
+# Runtime/data
+data/
+uploads/
+storage/
+tmp/
+.cache/
+
+# Installer build artifacts
+release/
+installers/
+*.msi
+*.exe
+*.AppImage
+*.deb
+*.rpm
+
+# Media test fixtures
+*.mp4
+*.mov
+*.mkv
+*.ts
+*.m3u8

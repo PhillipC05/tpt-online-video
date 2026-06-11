@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.tsbuildinfo
+*.log
+data/
+Dockerfile
+*.yml
+*.yaml

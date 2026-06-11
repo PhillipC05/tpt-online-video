@@ -1,0 +1,35 @@
+# TPT Online Video — Base Configuration
+# This file is installed to /opt/tpt/config/config.yaml (Linux)
+# or %ProgramFiles%\TPT Online Video\config\config.yaml (Windows).
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+
+database:
+  host: "localhost"
+  port: 5432
+  name: "tpt"
+  user: "tpt"
+  password: "tpt"
+  sslmode: "disable"
+
+redis:
+  addr: "localhost:6379"
+  password: ""
+
+storage:
+  provider: "local"
+  local:
+    path: "/opt/tpt/data/storage"
+  s3:
+    endpoint: "http://localhost:9000"
+    region: "us-east-1"
+    bucket: "tpt-media"
+    access_key: "tpt"
+    secret_key: "tpt123456"
+
+media:
+  ffmpeg_path: "/usr/bin/ffmpeg"
+  ffprobe_path: "/usr/bin/ffprobe"
+  tmp_dir: "/opt/tpt/data/tmp"

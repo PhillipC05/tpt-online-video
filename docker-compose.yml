@@ -1,0 +1,225 @@
+services:
+  # ── Infrastructure ──────────────────────────────────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: tpt-postgres
+    environment:
+      POSTGRES_DB: tpt
+      POSTGRES_USER: tpt
+      POSTGRES_PASSWORD: tpt
+    ports:
+      - "5432:5432"
+    volumes:
+      - tpt-postgres-data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tpt -d tpt"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: tpt-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - tpt-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: tpt-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: tpt
+      MINIO_ROOT_PASSWORD: tpt123456
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - tpt-minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: tpt-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 tpt tpt123456 &&
+      mc mb --ignore-existing local/tpt-media &&
+      mc mb --ignore-existing local/tpt-live &&
+      mc mb --ignore-existing local/tpt-cache &&
+      exit 0
+      "
+
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: tpt-mediamtx
+    ports:
+      - "1935:1935"
+      - "8888:8888"
+      - "8889:8889"
+      - "8189:8189"
+    volumes:
+      - ./infra/docker/mediamtx/mediamtx.yml:/mediamtx.yml:ro
+    command: ["/mediamtx.yml"]
+
+  # ── IPFS ────────────────────────────────────────────────────────
+
+  ipfs:
+    image: ipfs/kubo:latest
+    container_name: tpt-ipfs
+    ports:
+      - "5001:5001"   # IPFS API
+      - "8080:8080"   # IPFS Gateway
+      - "4001:4001"   # IPFS Swarm (p2p)
+    volumes:
+      - tpt-ipfs-data:/data/ipfs
+    environment:
+      IPFS_PROFILE: server
+    healthcheck:
+      test: ["CMD", "ipfs", "id"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── TPT Services (Development) ──────────────────────────────────
+
+  tpt-api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    container_name: tpt-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      APP_ENV: development
+      APP_HOST: 0.0.0.0
+      APP_PORT: "8080"
+      APP_BASE_URL: http://localhost:8080
+      CORS_ALLOWED_ORIGINS: http://localhost:5173,http://localhost:3000
+
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: tpt
+      POSTGRES_USER: tpt
+      POSTGRES_PASSWORD: tpt
+
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ""
+
+      STORAGE_PROVIDER: minio
+      LOCAL_STORAGE_ROOT: ""
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: tpt-media
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY_ID: tpt
+      S3_SECRET_ACCESS_KEY: tpt123456
+      S3_USE_PATH_STYLE: "true"
+
+      JWT_SECRET: change-me-in-development
+      JWT_ACCESS_TTL: 15m
+      JWT_REFRESH_TTL: 168h
+
+      MEDIA_STREAM_BASE_URL: http://localhost:8080
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  tpt-worker:
+    build:
+      context: .
+      dockerfile: services/worker/Dockerfile
+    container_name: tpt-worker
+    depends_on:
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      tpt-api:
+        condition: service_started
+    environment:
+      APP_ENV: development
+      WORKER_NAME: tpt-worker-dev
+      WORKER_CONCURRENCY: "2"
+      WORKER_WORK_DIR: /data/worker
+
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: tpt
+      POSTGRES_USER: tpt
+      POSTGRES_PASSWORD: tpt
+
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ""
+
+      STORAGE_PROVIDER: minio
+      LOCAL_STORAGE_ROOT: ""
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: tpt-media
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY_ID: tpt
+      S3_SECRET_ACCESS_KEY: tpt123456
+      S3_USE_PATH_STYLE: "true"
+    volumes:
+      - tpt-worker-data:/data/worker
+
+  tpt-web-dev:
+    image: node:20-alpine
+    container_name: tpt-web-dev
+    working_dir: /app
+    command: >
+      sh -c "
+      corepack enable &&
+      pnpm install &&
+      pnpm --filter @tpt/web dev --host 0.0.0.0
+      "
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./package.json:/app/package.json
+      - ./pnpm-workspace.yaml:/app/pnpm-workspace.yaml
+      - ./pnpm-lock.yaml:/app/pnpm-lock.yaml
+      - ./apps/web:/app/apps/web
+      - ./packages/types:/app/packages/types
+      - ./packages/tsconfig:/app/packages/tsconfig
+      - tpt-web-node-modules:/app/node_modules
+      - tpt-web-node-modules-web:/app/apps/web/node_modules
+    environment:
+      VITE_API_PROXY: http://tpt-api:8080
+      VITE_IPFS_API_PROXY: http://ipfs:5001
+    depends_on:
+      - tpt-api
+      - ipfs
+
+volumes:
+  tpt-postgres-data:
+  tpt-redis-data:
+  tpt-minio-data:
+  tpt-worker-data:
+  tpt-ipfs-data:
+  tpt-web-node-modules:
+  tpt-web-node-modules-web:
