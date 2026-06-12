@@ -12,6 +12,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/tpt-online-video/packages/media"
+	"github.com/tpt-online-video/packages/search"
 	"github.com/tpt-online-video/packages/storage"
 	"github.com/tpt-online-video/services/worker/internal/config"
 	"github.com/tpt-online-video/services/worker/internal/processor"
@@ -56,6 +57,7 @@ func main() {
 		logger.Error("storage unavailable", "error", err)
 		os.Exit(1)
 	}
+	searchProvider := search.NewPostgresProvider(db)
 
 	// Ensure work directory exists
 	if err := os.MkdirAll(cfg.WorkDir, 0755); err != nil {
@@ -70,7 +72,7 @@ func main() {
 	}
 
 	scaler := media.NewScalingController(queue, cfg.Scaler, logger)
-	proc := processor.New(logger, db, redisClient, store, queue, cfg.WorkDir).
+	proc := processor.New(logger, db, redisClient, store, searchProvider, queue, cfg.WorkDir).
 		WithScaler(scaler)
 
 	// Expose Prometheus-compatible metrics on a dedicated port.

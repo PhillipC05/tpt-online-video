@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import shaka from 'shaka-player/dist/shaka-player.ui';
+import CommentSection from './CommentSection';
 
 // shaka-player's clutz-generated d.ts doesn't expose Player methods or the
 // shaka.extern namespace through a bundler-mode import, so we define minimal
@@ -28,6 +29,7 @@ type VideoData = {
   status: string;
   duration_seconds: number | null;
   view_count: number;
+  like_count: number;
   created_at: string;
   hls_manifest_url: string;
   dash_manifest_url?: string;
@@ -94,6 +96,8 @@ export default function WatchPage({ videoId }: { videoId: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [videoLiked, setVideoLiked] = useState(false);
+  const [videoLikeCount, setVideoLikeCount] = useState(0);
   const [related, setRelated] = useState<RelatedVideo[]>([]);
 
   const playerRef = useRef<shaka.Player | null>(null);
@@ -152,6 +156,7 @@ export default function WatchPage({ videoId }: { videoId: string }) {
       })
       .then((data: VideoData) => {
         setVideo(data);
+        setVideoLikeCount(data.like_count);
         setLoading(false);
       })
       .catch((err) => {
@@ -159,6 +164,40 @@ export default function WatchPage({ videoId }: { videoId: string }) {
         setLoading(false);
       });
   }, [videoId]);
+
+  // Fetch video like status
+  useEffect(() => {
+    const token = getStoredToken();
+    if (!token || !video) return;
+    fetch(`/api/v1/videos/${videoId}/like`, { headers: authHeaders() })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { liked: boolean; like_count: number } | null) => {
+        if (data) {
+          setVideoLiked(data.liked);
+          setVideoLikeCount(data.like_count);
+        }
+      })
+      .catch(() => {});
+  }, [videoId, video]);
+
+  async function handleVideoLike() {
+    const token = getStoredToken();
+    if (!token) return;
+    try {
+      const method = videoLiked ? 'DELETE' : 'POST';
+      const res = await fetch(`/api/v1/videos/${videoId}/like`, {
+        method,
+        headers: authHeaders(),
+      });
+      if (res.ok) {
+        const data: { liked: boolean; like_count: number } = await res.json();
+        setVideoLiked(data.liked);
+        setVideoLikeCount(data.like_count);
+      }
+    } catch {
+      // silent
+    }
+  }
 
   // Fetch related videos
   useEffect(() => {
@@ -727,9 +766,31 @@ export default function WatchPage({ videoId }: { videoId: string }) {
               <span style={{ textTransform: 'capitalize' }}>{video.visibility}</span>
             </div>
 
+            <div className="video-like-bar">
+              <button
+                className={`video-like-btn${videoLiked ? ' video-like-btn--active' : ''}`}
+                onClick={handleVideoLike}
+                disabled={!currentUserId}
+                title={currentUserId ? (videoLiked ? 'Unlike' : 'Like') : 'Log in to like'}
+              >
+                {videoLiked ? '👍 Liked' : '👍 Like'}
+                {videoLikeCount > 0 && <span className="video-like-count">{videoLikeCount}</span>}
+              </button>
+            </div>
+
             {video.owner && (
               <div className="video-owner">
-                <strong>{video.owner.display_name}</strong>
+                <a
+                  href={`/channel/${video.owner.id}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    window.history.pushState({}, '', `/channel/${video.owner.id}`);
+                    window.dispatchEvent(new PopStateEvent('popstate'));
+                  }}
+                  style={{ color: 'inherit', textDecoration: 'none' }}
+                >
+                  <strong>{video.owner.display_name}</strong>
+                </a>
               </div>
             )}
 
@@ -749,6 +810,8 @@ export default function WatchPage({ videoId }: { videoId: string }) {
                 onDeleted={() => { window.location.href = '/'; }}
               />
             )}
+
+            <CommentSection videoId={videoId} currentUserId={currentUserId} />
           </div>
         </div>
 

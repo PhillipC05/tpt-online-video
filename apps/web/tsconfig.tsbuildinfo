@@ -1,1 +1,1 @@
-{"root":["./src/app.tsx","./src/uploadpage.tsx","./src/watchpage.tsx","./src/main.tsx","./src/shaka-player.d.ts"],"version":"5.9.3"}
+{"root":["./src/app.tsx","./src/searchpage.tsx","./src/uploadpage.tsx","./src/watchpage.tsx","./src/main.tsx","./src/shaka-player.d.ts"],"version":"5.9.3"}

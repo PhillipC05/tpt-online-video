@@ -12,11 +12,14 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/tpt-online-video/packages/auth"
 	"github.com/tpt-online-video/packages/media"
+	"github.com/tpt-online-video/packages/search"
 	"github.com/tpt-online-video/packages/shared"
 	"github.com/tpt-online-video/packages/storage"
 	svcauth "github.com/tpt-online-video/services/api/internal/auth"
 	"github.com/tpt-online-video/services/api/internal/http/handlers"
 	"github.com/tpt-online-video/services/api/internal/http/middleware"
+	svclive "github.com/tpt-online-video/services/api/internal/live"
+	svcmod "github.com/tpt-online-video/services/api/internal/moderation"
 )
 
 type Server struct {
@@ -24,24 +27,41 @@ type Server struct {
 	db           *pgxpool.Pool
 	redis        *redis.Client
 	storage      storage.Provider
+	search       search.Provider
 	queue        *media.Queue
 	baseURL      string
 	jwtSecret    string
 	jwtAccessTTL time.Duration
 	frontendURL  string
+
+	// Live streaming
+	mediamtxHLSBase    string
+	mediamtxWebRTCBase string
+	mediamtxHLSDir     string
+	rtmpBase           string
+	liveHookSecret     string
+
+	// Live chat hub (WebSocket room manager)
+	chatHub *svclive.ChatHub
 }
 
-func NewServer(logger *slog.Logger, db *pgxpool.Pool, redis *redis.Client, store storage.Provider, baseURL string) *Server {
+func NewServer(logger *slog.Logger, db *pgxpool.Pool, redis *redis.Client, store storage.Provider, searchProvider search.Provider, baseURL string) *Server {
 	return &Server{
-		logger:       logger,
-		db:           db,
-		redis:        redis,
-		storage:      store,
-		queue:        media.NewQueue(redis, "transcode:queue", "transcode-workers", "api"),
-		baseURL:      baseURL,
-		jwtSecret:    "jwt-secret", // Will be overridden via WithJWTSecret
-		jwtAccessTTL: 15 * time.Minute,
-		frontendURL:  "http://localhost:5173",
+		logger:             logger,
+		db:                 db,
+		redis:              redis,
+		storage:            store,
+		search:             searchProvider,
+		queue:              media.NewQueue(redis, "transcode:queue", "transcode-workers", "api"),
+		baseURL:            baseURL,
+		jwtSecret:          "jwt-secret", // Will be overridden via WithJWTSecret
+		jwtAccessTTL:       15 * time.Minute,
+		frontendURL:        "http://localhost:5173",
+		mediamtxHLSBase:    "http://localhost:8888",
+		mediamtxWebRTCBase: "http://localhost:8889",
+		rtmpBase:           "rtmp://localhost:1935",
+		liveHookSecret:     "changeme-live-hook-secret",
+		chatHub:            svclive.NewChatHub(redis, logger),
 	}
 }
 
@@ -55,6 +75,16 @@ func (s *Server) WithJWTSecret(secret string, accessTTL time.Duration) *Server {
 // WithFrontendURL sets the frontend base URL for auth emails.
 func (s *Server) WithFrontendURL(url string) *Server {
 	s.frontendURL = url
+	return s
+}
+
+// WithLiveConfig sets MediaMTX and RTMP base URLs for live streaming.
+func (s *Server) WithLiveConfig(hlsBase, webRTCBase, rtmpBase, hookSecret, hlsDir string) *Server {
+	s.mediamtxHLSBase = hlsBase
+	s.mediamtxWebRTCBase = webRTCBase
+	s.mediamtxHLSDir = hlsDir
+	s.rtmpBase = rtmpBase
+	s.liveHookSecret = hookSecret
 	return s
 }
 
@@ -128,7 +158,27 @@ func (s *Server) Routes() http.Handler {
 	emailSender := auth.NewEmailSender(emailCfg)
 	authHandler := handlers.NewAuthHandler(s.logger, s.db, emailSender, authSvcCfg, authMW)
 
-	videoHandler := handlers.NewVideoHandler(s.logger, s.db, s.redis, s.storage, s.baseURL)
+	videoHandler := handlers.NewVideoHandler(s.logger, s.db, s.redis, s.storage, s.search, s.baseURL)
+	searchHandler := handlers.NewSearchHandler(s.logger, s.search)
+	commentHandler := handlers.NewCommentHandler(s.logger, s.db)
+	profileHandler := handlers.NewProfileHandler(s.logger, s.db, s.storage)
+
+	// Live streaming — wire up repository, service, and handler
+	liveRepo := svclive.NewRepository(s.db)
+	liveSvcCfg := svclive.ServiceConfig{
+		RTMPBaseURL:      s.rtmpBase + "/live",
+		HLSBaseURL:       s.mediamtxHLSBase + "/live",
+		WebRTCBaseURL:    s.mediamtxWebRTCBase + "/live",
+		DVRDefaultWindow: 900,
+		HLSDirectory:     s.mediamtxHLSDir,
+	}
+	liveSvc := svclive.NewService(liveRepo, s.logger, liveSvcCfg)
+	liveHandler := handlers.NewLiveHandler(s.logger, s.db, liveSvc, s.liveHookSecret)
+
+	// Live chat — single handler shared across public and authenticated route groups
+	chatRepo := svclive.NewChatRepository(s.db)
+	chatSvc := svclive.NewChatService(chatRepo, s.chatHub, s.logger)
+	chatHandler := handlers.NewChatHandler(s.logger, s.db, chatSvc, liveRepo)
 
 	// Public routes (no auth required)
 	r.Group(func(r chi.Router) {
@@ -146,6 +196,28 @@ func (s *Server) Routes() http.Handler {
 		r.With(authMW.OptionalAuthMiddleware).Get("/api/v1/videos", videoHandler.ListVideos)
 		r.With(authMW.OptionalAuthMiddleware).Get("/api/v1/videos/{videoID}", videoHandler.GetVideo)
 		r.Get("/api/v1/videos/{videoID}/related", videoHandler.RelatedVideos)
+		r.Get("/api/v1/videos/{videoID}/comments", commentHandler.ListComments)
+		r.With(authMW.OptionalAuthMiddleware).Get("/api/v1/search/autocomplete", searchHandler.Autocomplete)
+		r.With(authMW.OptionalAuthMiddleware).Get("/api/v1/search", searchHandler.Search)
+
+		// Public channel/profile routes
+		r.Get("/api/v1/channels/{userID}", profileHandler.GetChannel)
+		r.Get("/api/v1/channels/{userID}/videos", profileHandler.ListChannelVideos)
+		r.Get("/api/v1/channels/{userID}/live", profileHandler.ListChannelLiveStreams)
+
+		// Public live stream metadata (optional auth for owner access)
+		r.With(authMW.OptionalAuthMiddleware).Get("/api/v1/live/streams/{streamID}", liveHandler.GetStream)
+		r.With(authMW.OptionalAuthMiddleware).Get("/api/v1/live/streams/{streamID}/dvr", liveHandler.GetDVRInfo)
+		r.Get("/api/v1/live/streams/live", liveHandler.ListLiveStreams)
+
+		// Live chat — WebSocket and history are public (optional auth)
+		r.With(authMW.OptionalAuthMiddleware).Get("/api/v1/live/streams/{streamID}/chat/ws", chatHandler.Connect)
+		r.Get("/api/v1/live/streams/{streamID}/chat/messages", chatHandler.ListMessages)
+
+		// MediaMTX internal hooks — no user auth, validated by X-Hook-Secret
+		r.Post("/api/v1/live/hooks/auth", liveHandler.HookAuth)
+		r.Post("/api/v1/live/hooks/on-publish", liveHandler.HookOnPublish)
+		r.Post("/api/v1/live/hooks/on-unpublish", liveHandler.HookOnUnpublish)
 
 		// Auth routes (public - register, login, refresh, forgot/reset password)
 		r.Group(func(r chi.Router) {
@@ -176,6 +248,26 @@ func (s *Server) Routes() http.Handler {
 		r.Delete("/api/v1/videos/{videoID}", videoHandler.DeleteVideo)
 		r.Get("/api/v1/videos/{videoID}/signed-urls", videoHandler.GetSignedURLs)
 
+		// Video likes
+		r.Post("/api/v1/videos/{videoID}/like", commentHandler.LikeVideo)
+		r.Delete("/api/v1/videos/{videoID}/like", commentHandler.UnlikeVideo)
+		r.Get("/api/v1/videos/{videoID}/like", commentHandler.GetVideoLikeStatus)
+
+		// Comments
+		r.Post("/api/v1/videos/{videoID}/comments", commentHandler.CreateComment)
+		r.Patch("/api/v1/comments/{commentID}", commentHandler.UpdateComment)
+		r.Delete("/api/v1/comments/{commentID}", commentHandler.DeleteComment)
+		r.Post("/api/v1/comments/{commentID}/report", commentHandler.ReportComment)
+
+		// Comment likes
+		r.Post("/api/v1/comments/{commentID}/like", commentHandler.LikeComment)
+		r.Delete("/api/v1/comments/{commentID}/like", commentHandler.UnlikeComment)
+
+		// Profile update and image uploads
+		r.Patch("/api/v1/auth/me/profile", profileHandler.UpdateProfile)
+		r.Post("/api/v1/auth/me/avatar", profileHandler.UploadAvatar)
+		r.Post("/api/v1/auth/me/banner", profileHandler.UploadBanner)
+
 		// Upload routes (upload requires auth)
 		uploadHandler := handlers.NewUploadHandler(s.logger, s.db, s.redis, s.storage, s.queue, s.baseURL)
 		r.Post("/api/v1/upload", uploadHandler.CreateSession)
@@ -185,13 +277,67 @@ func (s *Server) Routes() http.Handler {
 		r.Get("/api/v1/upload/sessions", uploadHandler.ListUploadSessions)
 		r.Get("/api/v1/upload/{sessionID}", uploadHandler.GetUploadStatus)
 
-		// Admin routes
+		// Live stream management (owner only)
+		r.Post("/api/v1/live/streams", liveHandler.CreateStream)
+		r.Get("/api/v1/live/streams", liveHandler.ListMyStreams)
+		r.Patch("/api/v1/live/streams/{streamID}", liveHandler.UpdateStream)
+		r.Delete("/api/v1/live/streams/{streamID}", liveHandler.DeleteStream)
+		r.Get("/api/v1/live/streams/{streamID}/urls", liveHandler.GetStreamURLs)
+
+		// Live chat moderation (owner or mod/admin)
+		r.Delete("/api/v1/live/streams/{streamID}/chat/messages/{messageID}", chatHandler.DeleteMessage)
+		r.Post("/api/v1/live/streams/{streamID}/chat/users/{userID}/timeout", chatHandler.TimeoutUser)
+		r.Delete("/api/v1/live/streams/{streamID}/chat/users/{userID}/timeout", chatHandler.RemoveTimeout)
+		r.Post("/api/v1/live/streams/{streamID}/chat/users/{userID}/ban", chatHandler.BanUser)
+		r.Delete("/api/v1/live/streams/{streamID}/chat/users/{userID}/ban", chatHandler.UnbanUser)
+		r.Post("/api/v1/live/streams/{streamID}/chat/lock", chatHandler.LockChat)
+		r.Delete("/api/v1/live/streams/{streamID}/chat/lock", chatHandler.UnlockChat)
+
+		// User report routes
+		modRepo := svcmod.NewRepository(s.db)
+		modSvc := svcmod.NewService(modRepo)
+		modHandler := handlers.NewModerationHandler(s.logger, s.db, modSvc)
+
+		// Video report (any authenticated user)
+		r.Post("/api/v1/reports", modHandler.CreateReport)
+		r.Post("/api/v1/videos/{videoID}/report", modHandler.ReportVideo)
+		r.Post("/api/v1/users/{userID}/report", modHandler.ReportUser)
+		r.Post("/api/v1/live/streams/{streamID}/report", modHandler.ReportLiveStream)
+		r.Post("/api/v1/live/chat/{messageID}/report", modHandler.ReportLiveChatMessage)
+
+		// Appeal submission
+		r.Post("/api/v1/reports/{reportID}/appeal", modHandler.SubmitAppeal)
+
+		// Admin/moderation routes
 		adminMiddleware := middleware.NewAdminMiddleware(s.logger, s.redis)
 		r.Group(func(r chi.Router) {
 			r.Use(adminMiddleware.AdminAuditLog)
-			r.Use(adminMiddleware.RequireAdmin)
+			r.Use(adminMiddleware.RequireModOrAdmin)
 			r.Use(adminMiddleware.AdminRateLimiter().Middleware)
 
+			// Dashboard
+			r.Get("/api/v1/admin/moderation/stats", modHandler.DashboardStats)
+
+			// Reports
+			r.Get("/api/v1/admin/reports", modHandler.ListReports)
+			r.Get("/api/v1/admin/reports/{reportID}", modHandler.GetReport)
+			r.Post("/api/v1/admin/reports/{reportID}/assign", modHandler.AssignReport)
+			r.Post("/api/v1/admin/reports/{reportID}/unassign", modHandler.UnassignReport)
+			r.Post("/api/v1/admin/reports/{reportID}/resolve", modHandler.ResolveReport)
+			r.Post("/api/v1/admin/reports/{reportID}/dismiss", modHandler.DismissReport)
+			r.Put("/api/v1/admin/reports/{reportID}/notes", modHandler.SetAdminNotes)
+			r.Post("/api/v1/admin/reports/{reportID}/appeal", modHandler.ResolveAppeal)
+
+			// Moderation actions
+			r.Post("/api/v1/admin/moderation/actions", modHandler.ExecuteAction)
+			r.Get("/api/v1/admin/moderation/actions", modHandler.ListActions)
+			r.Get("/api/v1/admin/moderation/actions/{actionID}", modHandler.GetAction)
+			r.Post("/api/v1/admin/moderation/actions/{actionID}/reverse", modHandler.ReverseAction)
+
+			// Audit log
+			r.Get("/api/v1/admin/audit-log", modHandler.ListAuditLog)
+
+			// Admin health
 			r.Get("/api/v1/admin/health", s.adminHealth)
 		})
 	})
@@ -205,6 +351,13 @@ func (s *Server) Routes() http.Handler {
 
 func (s *Server) EnsureQueueGroup(ctx context.Context) error {
 	return s.queue.EnsureGroup(ctx)
+}
+
+// StartDVRCleaner launches the DVR segment cleanup background goroutine.
+func (s *Server) StartDVRCleaner(ctx context.Context) {
+	liveRepo := svclive.NewRepository(s.db)
+	cleaner := svclive.NewDVRCleaner(liveRepo, s.logger, s.mediamtxHLSDir, s.mediamtxHLSBase, 5*time.Minute)
+	go cleaner.Run(ctx)
 }
 
 func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
@@ -235,6 +388,14 @@ func (s *Server) readyz(w http.ResponseWriter, r *http.Request) {
 		checks["storage"] = err.Error()
 	} else {
 		checks["storage"] = "ok"
+	}
+
+	if s.search != nil {
+		if err := s.search.Health(ctx); err != nil {
+			checks["search"] = err.Error()
+		} else {
+			checks["search"] = "ok"
+		}
 	}
 
 	status := http.StatusOK

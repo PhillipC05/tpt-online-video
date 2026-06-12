@@ -12,7 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/redis/go-redis/v9"
+	"github.com/tpt-online-video/packages/search"
 	"github.com/tpt-online-video/packages/storage"
 	"github.com/tpt-online-video/services/api/internal/http/middleware"
 )
@@ -22,15 +22,17 @@ type VideoHandler struct {
 	db        *pgxpool.Pool
 	redis     *redis.Client
 	storage   storage.Provider
+	search    search.Provider
 	mediaBase string
 }
 
-func NewVideoHandler(logger *slog.Logger, db *pgxpool.Pool, redis *redis.Client, store storage.Provider, mediaBase string) *VideoHandler {
+func NewVideoHandler(logger *slog.Logger, db *pgxpool.Pool, redis *redis.Client, store storage.Provider, searchProvider search.Provider, mediaBase string) *VideoHandler {
 	return &VideoHandler{
 		logger:    logger,
 		db:        db,
 		redis:     redis,
 		storage:   store,
+		search:    searchProvider,
 		mediaBase: mediaBase,
 	}
 }
@@ -362,6 +364,9 @@ func (h *VideoHandler) UpdateVideo(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "database error")
 		return
 	}
+	if err := h.indexVideo(r.Context(), videoID); err != nil {
+		h.logger.Warn("index updated video failed", "video_id", videoID, "error", err)
+	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"id": videoID})
 }
@@ -385,6 +390,9 @@ func (h *VideoHandler) DeleteVideo(w http.ResponseWriter, r *http.Request) {
 	if tag.RowsAffected() == 0 {
 		writeError(w, http.StatusNotFound, "video not found")
 		return
+	}
+	if err := h.deleteSearchDocument(r.Context(), videoID); err != nil {
+		h.logger.Warn("delete search document failed", "video_id", videoID, "error", err)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
@@ -516,6 +524,49 @@ func (h *VideoHandler) RelatedVideos(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, videos)
+}
+
+func (h *VideoHandler) indexVideo(ctx context.Context, videoID string) error {
+	if h.search == nil {
+		return nil
+	}
+
+	var id, title, description, ownerID, ownerDisplayName string
+	var durationSeconds *int
+	var viewCount, likeCount int64
+	var createdAt, publishedAt *time.Time
+
+	err := h.db.QueryRow(ctx, `
+		SELECT v.id::text, v.title, coalesce(v.description, ''), v.owner_id::text, u.display_name,
+		       v.duration_seconds, v.view_count, v.like_count, v.created_at, v.published_at
+		FROM videos v
+		JOIN users u ON u.id = v.owner_id
+		WHERE v.id = $1 AND v.deleted_at IS NULL`, videoID).
+		Scan(&id, &title, &description, &ownerID, &ownerDisplayName, &durationSeconds, &viewCount, &likeCount, &createdAt, &publishedAt)
+	if err != nil {
+		return fmt.Errorf("load video for search index: %w", err)
+	}
+
+	return h.search.IndexVideo(ctx, search.Video{
+		ID:               id,
+		Title:            title,
+		Description:      description,
+		OwnerID:          ownerID,
+		OwnerDisplayName: ownerDisplayName,
+		MediaType:        search.MediaTypeVOD,
+		DurationSeconds:  durationSeconds,
+		ViewCount:        viewCount,
+		LikeCount:        likeCount,
+		CreatedAt:        *createdAt,
+		PublishedAt:      publishedAt,
+	})
+}
+
+func (h *VideoHandler) deleteSearchDocument(ctx context.Context, videoID string) error {
+	if h.search == nil {
+		return nil
+	}
+	return h.search.DeleteVideo(ctx, videoID)
 }
 
 // itoa converts a small integer to its decimal string representation.

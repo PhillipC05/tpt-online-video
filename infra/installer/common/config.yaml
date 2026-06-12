@@ -33,3 +33,10 @@ media:
   ffmpeg_path: "/usr/bin/ffmpeg"
   ffprobe_path: "/usr/bin/ffprobe"
   tmp_dir: "/opt/tpt/data/tmp"
+
+live:
+  mediamtx_hls_base_url: "http://localhost:8888"
+  mediamtx_webrtc_base_url: "http://localhost:8889"
+  rtmp_base_url: "rtmp://localhost:1935"
+  hook_secret: "changeme-live-hook-secret"
+  default_dvr_window_seconds: 900

@@ -24,10 +24,24 @@ const (
 	PermUserDelete  Permission = "user:delete"
 
 	// Admin permissions
-	PermAdminPanel  Permission = "admin:panel"
-	PermAdminUsers  Permission = "admin:users"
-	PermAdminVideos Permission = "admin:videos"
-	PermAdminSystem Permission = "admin:system"
+	PermAdminPanel   Permission = "admin:panel"
+	PermAdminUsers   Permission = "admin:users"
+	PermAdminVideos  Permission = "admin:videos"
+	PermAdminSystem  Permission = "admin:system"
+
+	// Moderation permissions
+	PermModReportsList     Permission = "moderation:reports:list"
+	PermModReportsAssign   Permission = "moderation:reports:assign"
+	PermModReportsResolve  Permission = "moderation:reports:resolve"
+	PermModActionsHide     Permission = "moderation:actions:hide"
+	PermModActionsUnpublish Permission = "moderation:actions:unpublish"
+	PermModActionsDelete   Permission = "moderation:actions:delete"
+	PermModActionsSuspend  Permission = "moderation:actions:suspend"
+	PermModActionsBan      Permission = "moderation:actions:ban"
+	PermModActionsRestore  Permission = "moderation:actions:restore"
+	PermModAuditView       Permission = "moderation:audit:view"
+	PermModNotesManage     Permission = "moderation:notes:manage"
+	PermModAppealsReview   Permission = "moderation:appeals:review"
 )
 
 // RolePermissions maps roles to their allowed permissions.

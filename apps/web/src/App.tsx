@@ -1,19 +1,34 @@
 import { useEffect, useState } from 'react';
 import WatchPage from './WatchPage';
 import UploadPage from './UploadPage';
-
+import SearchPage from './SearchPage';
+import ChannelPage from './ChannelPage';
+import LivePage from './LivePage';
+import LiveWatchPage from './LiveWatchPage';
 type HealthResponse = {
   status: 'ok' | 'error';
   checks: Record<string, string>;
 };
 
-function getRoute(): { page: string; videoId?: string } {
+function getRoute(): { page: string; videoId?: string; userId?: string } {
   const path = window.location.pathname;
   if (path.startsWith('/watch/')) {
     return { page: 'watch', videoId: path.replace('/watch/', '') };
   }
   if (path === '/upload') {
     return { page: 'upload' };
+  }
+  if (path === '/search') {
+    return { page: 'search' };
+  }
+  if (path.startsWith('/channel/')) {
+    return { page: 'channel', userId: path.replace('/channel/', '') };
+  }
+  if (path === '/live') {
+    return { page: 'live' };
+  }
+  if (path.startsWith('/live/watch/')) {
+    return { page: 'live-watch', videoId: path.replace('/live/watch/', '') };
   }
   return { page: 'home' };
 }
@@ -74,6 +89,42 @@ export default function App() {
       <>
         <Header navigate={navigate} />
         <UploadPage />
+      </>
+    );
+  }
+
+  if (route.page === 'search') {
+    return (
+      <>
+        <Header navigate={navigate} />
+        <SearchPage />
+      </>
+    );
+  }
+
+  if (route.page === 'channel' && route.userId) {
+    return (
+      <>
+        <Header navigate={navigate} />
+        <ChannelPage userId={route.userId} />
+      </>
+    );
+  }
+
+  if (route.page === 'live') {
+    return (
+      <>
+        <Header navigate={navigate} />
+        <LivePage />
+      </>
+    );
+  }
+
+  if (route.page === 'live-watch' && route.videoId) {
+    return (
+      <>
+        <Header navigate={navigate} />
+        <LiveWatchPage streamId={route.videoId} />
       </>
     );
   }
@@ -147,10 +198,12 @@ function Header({ navigate }: { navigate: (path: string) => void }) {
       </a>
       <nav style={{ display: 'flex', gap: '1rem' }}>
         <a href="/" onClick={(e) => { e.preventDefault(); navigate('/'); }}>Home</a>
-      </nav>
-      <a href="/upload" onClick={(e) => { e.preventDefault(); navigate('/upload'); }} className="button" style={{ marginLeft: 'auto' }}>
-        Upload
-      </a>
+          <a href="/search" onClick={(e) => { e.preventDefault(); navigate('/search'); }}>Search</a>
+          <a href="/live" onClick={(e) => { e.preventDefault(); navigate('/live'); }}>Go Live</a>
+        </nav>
+        <a href="/upload" onClick={(e) => { e.preventDefault(); navigate('/upload'); }} className="button" style={{ marginLeft: 'auto' }}>
+          Upload
+        </a>
     </header>
   );
 }

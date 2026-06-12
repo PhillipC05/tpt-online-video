@@ -34,6 +34,13 @@ type Config struct {
 	FrontendBaseURL  string
 	MediaStreamBaseURL string
 
+	// Live streaming
+	MediaMTXHLSBaseURL    string
+	MediaMTXWebRTCBaseURL string
+	RTMPBaseURL           string
+	LiveHookSecret        string
+	MediaMTXHLSDirectory  string // local FS path where MediaMTX writes HLS segments
+
 	// Email settings
 	EmailProvider    string
 	EmailFromName    string
@@ -94,6 +101,12 @@ func Load() (Config, error) {
 		JWTRefreshTTL:    refreshTTL,
 		FrontendBaseURL:  getenv("FRONTEND_BASE_URL", "http://localhost:5173"),
 		MediaStreamBaseURL: getenv("MEDIA_STREAM_BASE_URL", "http://localhost:8080"),
+
+		MediaMTXHLSBaseURL:    getenv("MEDIAMTX_HLS_BASE_URL", "http://localhost:8888"),
+		MediaMTXWebRTCBaseURL: getenv("MEDIAMTX_WEBRTC_BASE_URL", "http://localhost:8889"),
+		RTMPBaseURL:           getenv("RTMP_BASE_URL", "rtmp://localhost:1935"),
+		LiveHookSecret:        getenv("LIVE_HOOK_SECRET", "changeme-live-hook-secret"),
+		MediaMTXHLSDirectory:  getenv("MEDIAMTX_HLS_DIRECTORY", "/var/mediamtx/hls"),
 
 		EmailProvider:    getenv("EMAIL_PROVIDER", "log"),
 		EmailFromName:    getenv("EMAIL_FROM_NAME", "TPT Online Video"),

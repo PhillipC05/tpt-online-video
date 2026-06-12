@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/tpt-online-video/packages/media"
+	"github.com/tpt-online-video/packages/search"
 	"github.com/tpt-online-video/packages/storage"
 	"github.com/tpt-online-video/services/worker/internal/metrics"
 )
@@ -21,9 +22,10 @@ import (
 type Processor struct {
 	logger  *slog.Logger
 	db      *pgxpool.Pool
-	redis   *redis.Client
-	storage storage.Provider
-	queue   *media.Queue
+	redis     *redis.Client
+	storage   storage.Provider
+	search    search.Provider
+	queue     *media.Queue
 	workDir string
 	scaler  *media.ScalingController
 	metrics *metrics.WorkerMetrics
@@ -32,12 +34,13 @@ type Processor struct {
 	totalDone     atomic.Int64
 }
 
-func New(logger *slog.Logger, db *pgxpool.Pool, redis *redis.Client, store storage.Provider, queue *media.Queue, workDir string) *Processor {
+func New(logger *slog.Logger, db *pgxpool.Pool, redis *redis.Client, store storage.Provider, searchProvider search.Provider, queue *media.Queue, workDir string) *Processor {
 	return &Processor{
 		logger:  logger,
 		db:      db,
 		redis:   redis,
 		storage: store,
+		search:  searchProvider,
 		queue:   queue,
 		workDir: workDir,
 		metrics: metrics.New(),
@@ -270,6 +273,9 @@ func (p *Processor) processJob(ctx context.Context, result *media.ClaimResult) e
 	if err := p.updateVideoReady(ctx, job.VideoID, width, height, duration, renditions, posterKey); err != nil {
 		return fmt.Errorf("update video ready: %w", err)
 	}
+	if err := p.indexVideoReady(ctx, job.VideoID); err != nil {
+		p.logger.Warn("index ready video failed", "video_id", job.VideoID, "error", err)
+	}
 
 	// ── DASH (non-fatal) ──────────────────────────────────────────────────────
 	hasDash := false
@@ -480,6 +486,42 @@ func (p *Processor) updateVideoReady(ctx context.Context, videoID string, width,
 	}
 
 	return tx.Commit(ctx)
+}
+
+func (p *Processor) indexVideoReady(ctx context.Context, videoID string) error {
+	if p.search == nil {
+		return nil
+	}
+
+	var id, title, description, ownerID, ownerDisplayName string
+	var durationSeconds *int
+	var viewCount, likeCount int64
+	var createdAt, publishedAt *time.Time
+
+	err := p.db.QueryRow(ctx, `
+		SELECT v.id::text, v.title, coalesce(v.description, ''), v.owner_id::text, u.display_name,
+		       v.duration_seconds, v.view_count, v.like_count, v.created_at, v.published_at
+		FROM videos v
+		JOIN users u ON u.id = v.owner_id
+		WHERE v.id = $1 AND v.deleted_at IS NULL`, videoID).
+		Scan(&id, &title, &description, &ownerID, &ownerDisplayName, &durationSeconds, &viewCount, &likeCount, &createdAt, &publishedAt)
+	if err != nil {
+		return fmt.Errorf("load video for search index: %w", err)
+	}
+
+	return p.search.IndexVideo(ctx, search.Video{
+		ID:               id,
+		Title:            title,
+		Description:      description,
+		OwnerID:          ownerID,
+		OwnerDisplayName: ownerDisplayName,
+		MediaType:        search.MediaTypeVOD,
+		DurationSeconds:  durationSeconds,
+		ViewCount:        viewCount,
+		LikeCount:        likeCount,
+		CreatedAt:        *createdAt,
+		PublishedAt:      publishedAt,
+	})
 }
 
 func (p *Processor) uploadDASHOutputs(ctx context.Context, videoID, dashDir string) error {

@@ -10,13 +10,38 @@ rtmpAddress: :1935
 hls: true
 hlsAddress: :8888
 hlsAllowOrigin: "*"
-hlsSegmentCount: 10
+# 450 segments × 2 s = 900 s (15-min DVR window at default settings).
+# Streams with shorter dvr_window_seconds honour the API-reported seek range;
+# MediaMTX always keeps the maximum window so any active viewer can seek freely.
+hlsSegmentCount: 450
 hlsSegmentDuration: 2s
+# Persist segments to disk so the DVR window survives brief MediaMTX restarts
+# and so the API cleanup service can remove them after the retention window expires.
+hlsDirectory: /var/mediamtx/hls
 
 webRTC: true
 webRTCAddress: :8889
 webRTCAllowOrigin: "*"
 
+# Validate RTMP publish credentials against the API.
+# MediaMTX POSTs JSON with user/password/path/query fields.
+# The stream key must be passed as: ?streamkey=stk_xxx in the RTMP URL.
+authMethod: http
+authHTTPAddress: http://api:8080/api/v1/live/hooks/auth
+
 paths:
-  all:
+  live/*:
     source: publisher
+    # Notify the API when a publisher connects so we can set status = live.
+    runOnPublish: >-
+      sh -c 'curl -sf -X POST http://api:8080/api/v1/live/hooks/on-publish
+      -H "X-Hook-Secret: ${LIVE_HOOK_SECRET}"
+      -H "Content-Type: application/json"
+      -d "{\"path\":\"$MTX_PATH\"}" || true'
+    runOnPublishRestart: yes
+    # Notify the API when the publisher disconnects so we can set status = ended.
+    runOnUnpublish: >-
+      sh -c 'curl -sf -X POST http://api:8080/api/v1/live/hooks/on-unpublish
+      -H "X-Hook-Secret: ${LIVE_HOOK_SECRET}"
+      -H "Content-Type: application/json"
+      -d "{\"path\":\"$MTX_PATH\"}" || true'

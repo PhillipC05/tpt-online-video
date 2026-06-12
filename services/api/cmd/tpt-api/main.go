@@ -12,7 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
-	"github.com/tpt-online-video/packages/auth"
+	"github.com/tpt-online-video/packages/search"
 	"github.com/tpt-online-video/packages/storage"
 	svcauth "github.com/tpt-online-video/services/api/internal/auth"
 	"github.com/tpt-online-video/services/api/internal/config"
@@ -50,20 +50,24 @@ func main() {
 		logger.Error("initialize storage", "error", err)
 		os.Exit(1)
 	}
+	searchProvider := search.NewPostgresProvider(db)
 
 	// Seed admin account if configured
 	if cfg.AdminEmail != "" && cfg.AdminPassword != "" {
 		seedAdmin(ctx, logger, db, cfg)
 	}
 
-	srv := httpapi.NewServer(logger, db, redisClient, store, cfg.BaseURL).
+	srv := httpapi.NewServer(logger, db, redisClient, store, searchProvider, cfg.BaseURL).
 		WithJWTSecret(cfg.JWTSecret, cfg.JWTAccessTTL).
-		WithFrontendURL(cfg.FrontendBaseURL)
+		WithFrontendURL(cfg.FrontendBaseURL).
+		WithLiveConfig(cfg.MediaMTXHLSBaseURL, cfg.MediaMTXWebRTCBaseURL, cfg.RTMPBaseURL, cfg.LiveHookSecret, cfg.MediaMTXHLSDirectory)
 
 	if err := srv.EnsureQueueGroup(ctx); err != nil {
 		logger.Error("ensure queue group", "error", err)
 		os.Exit(1)
 	}
+
+	srv.StartDVRCleaner(ctx)
 
 	server := &http.Server{
 		Addr:              cfg.Host + ":" + cfg.Port,

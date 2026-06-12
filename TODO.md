@@ -572,25 +572,40 @@ Goal: Build a public, self-hostable, open-source YouTube-like platform with VOD,
 - [x] Add custom player skin
 - [x] Add demo overlay showing selected rendition and bitrate
 
-## Phase 12 — Search (continued)
+## Phase 12 — Search
 
-- [ ] Implement search query model
-- [ ] Implement search result model
-- [ ] Implement ranking
-  - [ ] Text relevance
-  - [ ] Recency
-  - [ ] View count
-  - [ ] Engagement
-- [ ] Implement search indexing on video publish/update/delete
-- [ ] Implement search API
-- [ ] Add filters
-  - [ ] Duration
-  - [ ] Upload date
-  - [ ] Live/VOD
-  - [ ] Owner/channel
-- [ ] Add frontend search page
-- [ ] Add search autocomplete later
-- [ ] Add Meilisearch adapter later
+- [x] Define `SearchProvider` interface
+- [x] Implement PostgreSQL full-text search provider
+- [x] Implement search query model
+- [x] Implement search result model
+- [x] Implement ranking
+  - [x] Text relevance
+  - [x] Recency
+  - [x] View count
+  - [x] Engagement
+- [x] Implement search indexing on video publish/update/delete
+- [x] Implement search API
+- [x] Add filters
+  - [x] Duration
+  - [x] Upload date
+  - [x] Live/VOD
+  - [x] Owner/channel
+- [x] Add frontend search page
+- [x] Add JSON tags for correct serialization
+- [x] Fix frontend API envelope unwrapping
+- [x] Add search autocomplete
+  - [x] Backend - Autocomplete method on Provider interface
+  - [x] Backend - PostgreSQL ILIKE autocomplete implementation
+  - [x] Backend - Autocomplete HTTP handler
+  - [x] Backend - Route at GET /api/v1/search/autocomplete
+  - [x] Frontend - SearchAutocomplete component with debounce, keyboard nav, click-outside
+  - [x] Frontend - CSS styles for autocomplete dropdown
+- [x] Add Meilisearch adapter
+  - [x] Search, Autocomplete, IndexVideo, DeleteVideo, Health
+  - [x] Filter support (duration, upload date, media type, owner)
+  - [x] Sort support (relevance, recent, views)
+  - [x] Document mapping (meiliDocument <-> Video)
+  - [x] Helper field extractors for Meilisearch response
 
 ## Phase 13 — Comments and Engagement
 
@@ -650,74 +665,74 @@ Goal: Build a public, self-hostable, open-source YouTube-like platform with VOD,
 
 ## Phase 16 — Live Streaming Foundation
 
-- [ ] Choose live media server
+- [x] Choose live media server
   - [x] MediaMTX
 - [x] Add MediaMTX configuration
-- [ ] Add RTMP ingest documentation
-- [ ] Generate stream keys
-- [ ] Hash stream keys before storing
-- [ ] Implement live stream creation
-- [ ] Implement live stream update
-- [ ] Implement live stream deletion
-- [ ] Implement live stream start detection
-- [ ] Implement live stream end detection
-- [ ] Implement live HLS URL generation
-- [ ] Implement live WebRTC URL generation
-- [ ] Implement live stream metadata API
+- [x] Add RTMP ingest documentation
+- [x] Generate stream keys
+- [x] Hash stream keys before storing
+- [x] Implement live stream creation
+- [x] Implement live stream update
+- [x] Implement live stream deletion
+- [x] Implement live stream start detection
+- [x] Implement live stream end detection
+- [x] Implement live HLS URL generation
+- [x] Implement live WebRTC URL generation
+- [x] Implement live stream metadata API
 - [ ] Add frontend live creation page
-- [ ] Add OBS setup guide
+- [x] Add OBS setup guide
 
 ## Phase 17 — Live HLS Playback
 
-- [ ] Generate live HLS manifest URLs
-- [ ] Add Shaka Player live HLS support
-- [ ] Add live badge/status
-- [ ] Add reconnect handling
-- [ ] Add latency indicator
+- [x] Generate live HLS manifest URLs
+- [x] Add Shaka Player live HLS support
+- [x] Add live badge/status
+- [x] Add reconnect handling
+- [x] Add latency indicator
 - [ ] Add viewer count later
 
 ## Phase 18 — WebRTC Low-Latency Playback
 
-- [ ] Configure MediaMTX WebRTC/WHEP
-- [ ] Implement WebRTC playback API endpoint if needed
-- [ ] Add frontend WebRTC player path
-- [ ] Add fallback to HLS if WebRTC unavailable
-- [ ] Add WebRTC latency metrics
-- [ ] Add WebRTC troubleshooting docs
-- [ ] Mark WebRTC as experimental until hardened
+- [x] Configure MediaMTX WebRTC/WHEP
+- [x] Implement WebRTC playback API endpoint if needed
+- [x] Add frontend WebRTC player path
+- [x] Add fallback to HLS if WebRTC unavailable
+- [x] Add WebRTC latency metrics
+- [x] Add WebRTC troubleshooting docs
+- [x] Mark WebRTC as experimental until hardened
 
 ## Phase 19 — Live DVR
 
-- [ ] Define DVR window configuration
-- [ ] Implement sliding HLS playlist
-- [ ] Store recent live segments
-  - [ ] Local disk first
+- [x] Define DVR window configuration
+- [x] Implement sliding HLS playlist
+- [x] Store recent live segments
+  - [x] Local disk first
   - [ ] Redis later
   - [ ] Object storage later
-- [ ] Implement segment retention cleanup
-- [ ] Implement live pause/rewind behavior
-- [ ] Implement jump-to-live behavior
-- [ ] Add frontend DVR controls
+- [x] Implement segment retention cleanup
+- [x] Implement live pause/rewind behavior
+- [x] Implement jump-to-live behavior
+- [x] Add frontend DVR controls
 - [ ] Add DVR performance tests
-- [ ] Add DVR documentation
+- [x] Add DVR documentation
 
 ## Phase 20 — Live Chat
 
-- [ ] Implement WebSocket chat rooms
-- [ ] Implement chat message creation
-- [ ] Implement Redis pub/sub broadcast
-- [ ] Persist chat messages
-- [ ] Implement message history loading
-- [ ] Implement chat moderation
-  - [ ] Delete message
-  - [ ] Timeout user
-  - [ ] Ban user from chat
-  - [ ] Lock chat
-- [ ] Implement chat reports
-- [ ] Add frontend live chat UI
+- [x] Implement WebSocket chat rooms
+- [x] Implement chat message creation
+- [x] Implement Redis pub/sub broadcast
+- [x] Persist chat messages
+- [x] Implement message history loading
+- [x] Implement chat moderation
+  - [x] Delete message
+  - [x] Timeout user
+  - [x] Ban user from chat
+  - [x] Lock chat
+- [x] Implement chat reports
+- [x] Add frontend live chat UI
 - [ ] Add chat typing indicator later
-- [ ] Add chat moderation UI
-- [ ] Add chat sync documentation
+- [x] Add chat moderation UI
+- [x] Add chat sync documentation
 
 ## Phase 22 — Frontend App (continued)
 
