@@ -16,6 +16,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -305,11 +306,12 @@ func (rm *chatRoom) sendToUser(userID string, msg []byte) {
 
 // ChatHub manages all active chat rooms and the Redis pub/sub subscriptions.
 type ChatHub struct {
-	mu     sync.RWMutex
-	rooms  map[string]*chatRoom            // streamID → room
-	unsubs map[string]context.CancelFunc   // streamID → cancel fn for Redis sub goroutine
-	redis  *redis.Client
-	logger *slog.Logger
+	mu           sync.RWMutex
+	rooms        map[string]*chatRoom          // streamID → room
+	unsubs       map[string]context.CancelFunc // streamID → cancel fn for Redis sub goroutine
+	redis        *redis.Client
+	logger       *slog.Logger
+	chatMsgsTotal atomic.Int64 // total user messages sent since process start
 }
 
 // NewChatHub creates a new hub. Call Run() to start the background worker.
@@ -361,6 +363,25 @@ func (h *ChatHub) dropRoom(streamID string) {
 		delete(h.unsubs, streamID)
 	}
 }
+
+// Viewers returns the total number of WebSocket clients currently connected
+// across all chat rooms on this instance.
+func (h *ChatHub) Viewers() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	total := 0
+	for _, rm := range h.rooms {
+		total += rm.size()
+	}
+	return total
+}
+
+// RecordMessage increments the lifetime chat message counter.
+// Call this once per successfully persisted and published user message.
+func (h *ChatHub) RecordMessage() { h.chatMsgsTotal.Add(1) }
+
+// ChatMsgsTotal returns the total number of chat messages sent since process start.
+func (h *ChatHub) ChatMsgsTotal() int64 { return h.chatMsgsTotal.Load() }
 
 // redisSubscribe listens on the stream's Redis pub/sub channel and broadcasts
 // incoming payloads to all local clients in the room.

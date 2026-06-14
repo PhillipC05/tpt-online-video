@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -16,9 +17,10 @@ import (
 
 // AuthHandler handles authentication HTTP requests.
 type AuthHandler struct {
-	logger      *slog.Logger
-	svc         *svcauth.Service
-	authMW      *middleware.AuthMiddleware
+	logger         *slog.Logger
+	svc            *svcauth.Service
+	authMW         *middleware.AuthMiddleware
+	allowedOrigins []string // used to validate OAuth redirect_uri
 }
 
 // NewAuthHandler creates a new auth handler.
@@ -30,6 +32,12 @@ func NewAuthHandler(logger *slog.Logger, db *pgxpool.Pool, emailSender auth.Emai
 		svc:    svc,
 		authMW: authMW,
 	}
+}
+
+// WithAllowedOrigins sets the list of origins used to validate OAuth redirect URIs.
+func (h *AuthHandler) WithAllowedOrigins(origins []string) *AuthHandler {
+	h.allowedOrigins = origins
+	return h
 }
 
 // Service returns the underlying auth service.
@@ -99,6 +107,15 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	if req.Email == "" || req.Password == "" {
 		writeError(w, http.StatusBadRequest, "email and password are required")
 		return
+	}
+	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
+	if req.DisplayName != "" {
+		clean, err := validateDisplayName(req.DisplayName)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "display_name: "+err.Error())
+			return
+		}
+		req.DisplayName = clean
 	}
 
 	resp, err := h.svc.Register(r.Context(), req.Email, req.Password, req.DisplayName)
@@ -371,9 +388,17 @@ func (h *AuthHandler) OAuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Whitelist provider names to prevent injection into downstream URLs.
+	allowedProviders := map[string]bool{"google": true, "github": true, "microsoft": true}
+	if !allowedProviders[provider] {
+		writeError(w, http.StatusBadRequest, "unsupported OAuth provider")
+		return
+	}
+
 	var req struct {
-		Code  string `json:"code"`
-		State string `json:"state,omitempty"`
+		Code        string `json:"code"`
+		State       string `json:"state,omitempty"`
+		RedirectURI string `json:"redirect_uri,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -384,6 +409,15 @@ func (h *AuthHandler) OAuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Open-redirect guard: validate redirect_uri against the allowed-origin list.
+	if req.RedirectURI != "" && !isAllowedRedirectURL(req.RedirectURI, h.allowedOrigins) {
+		writeError(w, http.StatusBadRequest, "redirect_uri is not an allowed origin")
+		return
+	}
+
+	// TODO: implement full OAuth 2.0 exchange with PKCE verification once a
+	// provider library is wired up.  State/nonce must be validated against a
+	// server-side store (Redis) before exchanging the code.
 	writeError(w, http.StatusNotImplemented, "OAuth flow not fully implemented")
 }
 

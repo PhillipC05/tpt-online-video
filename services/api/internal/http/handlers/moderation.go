@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -603,6 +604,16 @@ func parseAuditFilter(r *http.Request) moderation.AuditFilter {
 	}
 	if tid := r.URL.Query().Get("target_id"); tid != "" {
 		filter.TargetID = &tid
+	}
+	if s := r.URL.Query().Get("since"); s != "" {
+		if t, err := time.Parse(time.RFC3339, s); err == nil {
+			filter.Since = &t
+		}
+	}
+	if u := r.URL.Query().Get("until"); u != "" {
+		if t, err := time.Parse(time.RFC3339, u); err == nil {
+			filter.Until = &t
+		}
 	}
 
 	if offsetStr := r.URL.Query().Get("offset"); offsetStr != "" {

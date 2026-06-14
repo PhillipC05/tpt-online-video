@@ -285,17 +285,23 @@ func (h *ProfileHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	i := 1
 
 	if req.DisplayName != nil {
-		if *req.DisplayName == "" {
-			writeError(w, http.StatusBadRequest, "display_name cannot be empty")
+		clean, err := validateDisplayName(*req.DisplayName)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "display_name: "+err.Error())
 			return
 		}
 		setClauses = append(setClauses, "display_name = $"+itoa(i))
-		args = append(args, *req.DisplayName)
+		args = append(args, clean)
 		i++
 	}
 	if req.Bio != nil {
+		clean, err := validateBio(*req.Bio)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "bio: "+err.Error())
+			return
+		}
 		setClauses = append(setClauses, "bio = $"+itoa(i))
-		args = append(args, *req.Bio)
+		args = append(args, clean)
 		i++
 	}
 

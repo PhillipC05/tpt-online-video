@@ -118,12 +118,14 @@ type ActionFilter struct {
 }
 
 type AuditFilter struct {
-	ActorID    *string `json:"actor_id,omitempty"`
-	Action     *string `json:"action,omitempty"`
-	TargetType *string `json:"target_type,omitempty"`
-	TargetID   *string `json:"target_id,omitempty"`
-	Offset     int     `json:"offset"`
-	Limit      int     `json:"limit"`
+	ActorID    *string    `json:"actor_id,omitempty"`
+	Action     *string    `json:"action,omitempty"`
+	TargetType *string    `json:"target_type,omitempty"`
+	TargetID   *string    `json:"target_id,omitempty"`
+	Since      *time.Time `json:"since,omitempty"` // inclusive lower bound on created_at
+	Until      *time.Time `json:"until,omitempty"` // inclusive upper bound on created_at
+	Offset     int        `json:"offset"`
+	Limit      int        `json:"limit"`
 }
 
 // ─── Repository ───────────────────────────────────────────────────────────────
@@ -540,6 +542,16 @@ func (r *Repository) ListAuditLog(ctx context.Context, filter AuditFilter) ([]*A
 	if filter.TargetID != nil {
 		where += " AND al.target_id = $" + itoa(i)
 		args = append(args, *filter.TargetID)
+		i++
+	}
+	if filter.Since != nil {
+		where += " AND al.created_at >= $" + itoa(i)
+		args = append(args, *filter.Since)
+		i++
+	}
+	if filter.Until != nil {
+		where += " AND al.created_at <= $" + itoa(i)
+		args = append(args, *filter.Until)
 		i++
 	}
 

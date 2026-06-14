@@ -127,15 +127,20 @@ func (h *LiveHandler) CreateStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req.Title = strings.TrimSpace(req.Title)
-	if req.Title == "" {
-		writeError(w, http.StatusBadRequest, "title is required")
+	cleanTitle, err := validateTitle(req.Title)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "title: "+err.Error())
+		return
+	}
+	cleanDesc, err := validateDescription(req.Description)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "description: "+err.Error())
 		return
 	}
 
 	svcReq := svclive.CreateStreamRequest{
-		Title:        req.Title,
-		Description:  strings.TrimSpace(req.Description),
+		Title:        cleanTitle,
+		Description:  cleanDesc,
 		DVR:          req.DVR,
 		DVRWindowSec: req.DVRWindowSec,
 	}
@@ -203,16 +208,20 @@ func (h *LiveHandler) UpdateStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Title != nil {
-		trimmed := strings.TrimSpace(*req.Title)
-		req.Title = &trimmed
-		if *req.Title == "" {
-			writeError(w, http.StatusBadRequest, "title cannot be empty")
+		clean, err := validateTitle(*req.Title)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "title: "+err.Error())
 			return
 		}
+		req.Title = &clean
 	}
 	if req.Description != nil {
-		trimmed := strings.TrimSpace(*req.Description)
-		req.Description = &trimmed
+		clean, err := validateDescription(*req.Description)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "description: "+err.Error())
+			return
+		}
+		req.Description = &clean
 	}
 
 	stream, err := h.service.Update(r.Context(), streamID, userID, req.Title, req.Description)

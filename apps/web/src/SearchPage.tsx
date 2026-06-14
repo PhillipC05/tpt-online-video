@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import SearchAutocomplete from './SearchAutocomplete';
+import VideoGrid from './components/VideoGrid';
+import EmptyState from './components/EmptyState';
+import { type VideoCardItem } from './components/VideoCard';
 
 type SearchMediaType = 'vod' | 'live';
 type SearchDurationFilter = 'short' | 'medium' | 'long';
@@ -41,20 +44,34 @@ type SearchResult = {
 };
 
 type Filters = {
-  duration: SearchDurationFilter;
-  upload_date: SearchUploadDateFilter;
-  media_type: SearchMediaType;
+  duration: SearchDurationFilter | '';
+  upload_date: SearchUploadDateFilter | '';
+  media_type: SearchMediaType | '';
   owner_id: string;
   sort: SearchSort;
 };
 
 const defaultFilters: Filters = {
-  duration: '' as SearchDurationFilter,
-  upload_date: '' as SearchUploadDateFilter,
-  media_type: '' as SearchMediaType,
+  duration: '',
+  upload_date: '',
+  media_type: '',
   owner_id: '',
   sort: 'relevance',
 };
+
+function toVideoCardItem(item: SearchResultItem): VideoCardItem {
+  return {
+    id: item.id,
+    title: item.title,
+    description: item.description,
+    owner_display_name: item.owner_display_name,
+    duration_seconds: item.duration_seconds,
+    view_count: item.view_count,
+    like_count: item.like_count,
+    published_at: item.published_at,
+    media_type: item.media_type,
+  };
+}
 
 export default function SearchPage() {
   const [query, setQuery] = useState('');
@@ -73,7 +90,6 @@ export default function SearchPage() {
   function handleAutocompleteSelect(value: string) {
     setQuery(value);
     setShowAutocomplete(false);
-    // Trigger search immediately by causing the query to re-evaluate
     setResult(null);
     inputRef.current?.focus();
   }
@@ -93,9 +109,9 @@ export default function SearchPage() {
     setError(null);
 
     fetch(`/api/v1/search?${params.toString()}`)
-      .then((response) => {
-        if (!response.ok) throw new Error('Search request failed');
-        return response.json();
+      .then((r) => {
+        if (!r.ok) throw new Error('Search request failed');
+        return r.json();
       })
       .then((data: APIResponse<SearchResult>) => {
         if (!cancelled && data.success) setResult(data.data);
@@ -107,9 +123,7 @@ export default function SearchPage() {
         if (!cancelled) setLoading(false);
       });
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [query, filters]);
 
   function updateFilter<K extends keyof Filters>(key: K, value: Filters[K]) {
@@ -132,10 +146,9 @@ export default function SearchPage() {
         </div>
 
         <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            setResult(null);
-          }}
+          role="search"
+          aria-label="Video search"
+          onSubmit={(e) => { e.preventDefault(); setResult(null); }}
           className="search-form"
         >
           <div style={{ position: 'relative' }}>
@@ -146,6 +159,8 @@ export default function SearchPage() {
               onFocus={() => setShowAutocomplete(true)}
               placeholder="Search by title, description, owner, or tags"
               aria-label="Search query"
+              aria-autocomplete="list"
+              aria-expanded={showAutocomplete}
             />
             {showAutocomplete && (
               <SearchAutocomplete query={query} onSelect={handleAutocompleteSelect} />
@@ -154,10 +169,16 @@ export default function SearchPage() {
           <button className="button" type="submit">Search</button>
         </form>
 
-        <div className="search-filters">
+        <fieldset className="search-filters">
+          <legend className="sr-only">Search filters</legend>
+
           <label>
             Duration
-            <select value={filters.duration} onChange={(e) => updateFilter('duration', e.target.value as SearchDurationFilter)}>
+            <select
+              value={filters.duration}
+              onChange={(e) => updateFilter('duration', e.target.value as Filters['duration'])}
+              aria-label="Filter by duration"
+            >
               <option value="">Any</option>
               <option value="short">Short (&lt; 4 min)</option>
               <option value="medium">Medium (4–20 min)</option>
@@ -167,7 +188,11 @@ export default function SearchPage() {
 
           <label>
             Upload date
-            <select value={filters.upload_date} onChange={(e) => updateFilter('upload_date', e.target.value as SearchUploadDateFilter)}>
+            <select
+              value={filters.upload_date}
+              onChange={(e) => updateFilter('upload_date', e.target.value as Filters['upload_date'])}
+              aria-label="Filter by upload date"
+            >
               <option value="">Any time</option>
               <option value="today">Today</option>
               <option value="week">This week</option>
@@ -178,7 +203,11 @@ export default function SearchPage() {
 
           <label>
             Type
-            <select value={filters.media_type} onChange={(e) => updateFilter('media_type', e.target.value as SearchMediaType)}>
+            <select
+              value={filters.media_type}
+              onChange={(e) => updateFilter('media_type', e.target.value as Filters['media_type'])}
+              aria-label="Filter by media type"
+            >
               <option value="">Any</option>
               <option value="vod">VOD</option>
               <option value="live">Live</option>
@@ -191,12 +220,17 @@ export default function SearchPage() {
               value={filters.owner_id}
               onChange={(e) => updateFilter('owner_id', e.target.value)}
               placeholder="Optional channel/user UUID"
+              aria-label="Filter by owner ID"
             />
           </label>
 
           <label>
             Sort
-            <select value={filters.sort} onChange={(e) => updateFilter('sort', e.target.value as SearchSort)}>
+            <select
+              value={filters.sort}
+              onChange={(e) => updateFilter('sort', e.target.value as SearchSort)}
+              aria-label="Sort results by"
+            >
               <option value="relevance">Relevance</option>
               <option value="recent">Newest</option>
               <option value="views">Most viewed</option>
@@ -209,53 +243,30 @@ export default function SearchPage() {
               Clear filters
             </button>
           )}
-        </div>
+        </fieldset>
       </section>
 
-      {error && <p className="error">{error}</p>}
-      {loading && <p className="muted">Searching...</p>}
+      {error && <p className="error" role="alert">{error}</p>}
+      {loading && <p className="muted" aria-live="polite" aria-busy="true">Searching…</p>}
 
       {!loading && result && (
         <>
-          <div className="search-summary">
+          <div className="search-summary" aria-live="polite">
             <strong>{result.total.toLocaleString()}</strong> result{result.total === 1 ? '' : 's'}
-            {result.query.q && <span> for “{result.query.q}”</span>}
+            {result.query.q && <span> for &ldquo;{result.query.q}&rdquo;</span>}
           </div>
 
           {result.items.length === 0 ? (
-            <div className="card">
-              <h2>No videos found</h2>
-              <p>Try a broader query or remove one of the filters.</p>
-            </div>
+            <EmptyState
+              icon="search"
+              title="No videos found"
+              description="Try a broader query or remove one of the filters."
+            />
           ) : (
-            <section className="video-grid">
-              {result.items.map((item) => (
-                <a key={item.id} href={`/watch/${item.id}`} className="video-card">
-                  <div className="video-card-thumb" />
-                  <div className="video-card-body">
-                    <h3>{item.title}</h3>
-                    {item.description && <p>{item.description}</p>}
-                    <div className="video-card-meta">
-                      <span>{item.owner_display_name}</span>
-                      {item.duration_seconds !== null && <span>{formatDuration(item.duration_seconds)}</span>}
-                      <span>{item.view_count.toLocaleString()} views</span>
-                      <span>{item.media_type.toUpperCase()}</span>
-                    </div>
-                  </div>
-                </a>
-              ))}
-            </section>
+            <VideoGrid videos={result.items.map(toVideoCardItem)} />
           )}
         </>
       )}
     </main>
   );
-}
-
-function formatDuration(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  return `${m}:${s.toString().padStart(2, '0')}`;
 }

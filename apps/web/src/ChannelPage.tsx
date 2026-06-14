@@ -1,4 +1,7 @@
 import { useEffect, useState } from 'react';
+import VideoGrid from './components/VideoGrid';
+import EmptyState from './components/EmptyState';
+import { type VideoCardItem } from './components/VideoCard';
 
 type ChannelData = {
   id: string;
@@ -33,6 +36,31 @@ type Props = {
   userId: string;
 };
 
+function videoToCardItem(v: ChannelVideo): VideoCardItem {
+  return {
+    id: v.id,
+    title: v.title,
+    duration_seconds: v.duration_seconds,
+    view_count: v.view_count,
+    created_at: v.created_at,
+    thumbnail_url: v.thumbnail_url,
+    visibility: v.visibility,
+    media_type: 'vod',
+    status: v.status,
+  };
+}
+
+function streamToCardItem(s: ChannelLiveStream): VideoCardItem {
+  return {
+    id: s.id,
+    title: s.title,
+    created_at: s.created_at,
+    published_at: s.started_at,
+    media_type: 'live',
+    status: s.status,
+  };
+}
+
 export default function ChannelPage({ userId }: Props) {
   const [channel, setChannel] = useState<ChannelData | null>(null);
   const [videos, setVideos] = useState<ChannelVideo[]>([]);
@@ -53,12 +81,12 @@ export default function ChannelPage({ userId }: Props) {
 
         if (!channelRes.ok) {
           const err = await channelRes.json().catch(() => ({ error: 'channel not found' }));
-          throw new Error(err.error || 'channel not found');
+          throw new Error((err as { error?: string }).error || 'channel not found');
         }
 
-        const channelData: ChannelData = await channelRes.json();
-        const videosData: ChannelVideo[] = await videosRes.json();
-        const liveData: ChannelLiveStream[] = await liveRes.json();
+        const channelData = (await channelRes.json()) as ChannelData;
+        const videosData = (await videosRes.json()) as ChannelVideo[];
+        const liveData = (await liveRes.json()) as ChannelLiveStream[];
 
         if (!cancelled) {
           setChannel(channelData);
@@ -66,9 +94,7 @@ export default function ChannelPage({ userId }: Props) {
           setLiveStreams(liveData);
         }
       } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : String(err));
-        }
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
       }
     }
 
@@ -79,11 +105,12 @@ export default function ChannelPage({ userId }: Props) {
   if (error) {
     return (
       <main className="app-shell">
-        <div className="error-state">
-          <h2>Channel not found</h2>
-          <p>{error}</p>
-          <a href="/" className="button">Go home</a>
-        </div>
+        <EmptyState
+          icon="generic"
+          title="Channel not found"
+          description={error}
+          action={{ label: 'Go home', href: '/' }}
+        />
       </main>
     );
   }
@@ -91,9 +118,9 @@ export default function ChannelPage({ userId }: Props) {
   if (!channel) {
     return (
       <main className="app-shell">
-        <div className="loading-state">
-          <div className="spinner" />
-          <p>Loading channel...</p>
+        <div className="loading-state" aria-busy="true" aria-label="Loading channel">
+          <div className="spinner" aria-hidden="true" />
+          <p>Loading channel…</p>
         </div>
       </main>
     );
@@ -105,23 +132,34 @@ export default function ChannelPage({ userId }: Props) {
     day: 'numeric',
   });
 
+  function handleVideoClick(video: VideoCardItem, e: React.MouseEvent<HTMLAnchorElement>) {
+    e.preventDefault();
+    const path = video.media_type === 'live' ? `/live/watch/${video.id}` : `/watch/${video.id}`;
+    window.history.pushState({}, '', path);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }
+
   return (
     <main className="app-shell">
-      {/* Banner */}
       <div
         className="channel-banner"
+        role="img"
+        aria-label={`${channel.display_name} channel banner`}
         style={channel.banner_url ? { backgroundImage: `url(${channel.banner_url})` } : undefined}
       >
-        <div className="channel-banner-overlay" />
+        <div className="channel-banner-overlay" aria-hidden="true" />
       </div>
 
-      {/* Channel header */}
       <div className="channel-header">
         <div className="channel-avatar-wrapper">
           {channel.avatar_url ? (
-            <img src={channel.avatar_url} alt={channel.display_name} className="channel-avatar" />
+            <img
+              src={channel.avatar_url}
+              alt={`${channel.display_name} avatar`}
+              className="channel-avatar"
+            />
           ) : (
-            <div className="channel-avatar-placeholder">
+            <div className="channel-avatar-placeholder" aria-hidden="true">
               {channel.display_name.charAt(0).toUpperCase()}
             </div>
           )}
@@ -136,115 +174,62 @@ export default function ChannelPage({ userId }: Props) {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="channel-tabs">
+      <div className="channel-tabs" role="tablist" aria-label="Channel content">
         <button
+          role="tab"
+          aria-selected={activeTab === 'videos'}
+          aria-controls="tab-panel-videos"
           className={`channel-tab ${activeTab === 'videos' ? 'channel-tab--active' : ''}`}
           onClick={() => setActiveTab('videos')}
         >
-          Videos
+          Videos ({videos.length})
         </button>
         <button
+          role="tab"
+          aria-selected={activeTab === 'live'}
+          aria-controls="tab-panel-live"
           className={`channel-tab ${activeTab === 'live' ? 'channel-tab--active' : ''}`}
           onClick={() => setActiveTab('live')}
         >
-          Live streams
+          Live streams ({liveStreams.length})
         </button>
       </div>
 
-      {/* Video grid */}
-      {activeTab === 'videos' && (
-        <div className="channel-video-grid">
-          {videos.length === 0 && (
-            <p className="empty-state">No videos yet.</p>
-          )}
-          {videos.map((video) => (
-            <a key={video.id} href={`/watch/${video.id}`} className="channel-video-card"
-              onClick={(e) => {
-                e.preventDefault();
-                window.history.pushState({}, '', `/watch/${video.id}`);
-                window.dispatchEvent(new PopStateEvent('popstate'));
-              }}
-            >
-              <div className="channel-video-thumb">
-                {video.thumbnail_url ? (
-                  <img src={video.thumbnail_url} alt={video.title} loading="lazy" />
-                ) : (
-                <div className="channel-video-thumb-placeholder" />
-                )}
-                {video.duration_seconds && (
-                  <span className="channel-video-duration">
-                    {formatDuration(video.duration_seconds)}
-                  </span>
-                )}
-                {video.visibility !== 'public' && (
-                  <span className="channel-video-visibility-badge">{video.visibility}</span>
-                )}
-              </div>
-              <div className="channel-video-info">
-                <h3 className="channel-video-title">{video.title}</h3>
-                <p className="channel-video-meta">
-                  {video.view_count.toLocaleString()} views
-                  {' · '}
-                  {formatRelativeDate(video.created_at)}
-                </p>
-              </div>
-            </a>
-          ))}
-        </div>
-      )}
+      <div
+        id="tab-panel-videos"
+        role="tabpanel"
+        aria-label="Videos"
+        hidden={activeTab !== 'videos'}
+      >
+        {videos.length === 0 ? (
+          <EmptyState icon="video" title="No videos yet" description="This channel hasn't uploaded any videos." />
+        ) : (
+          <VideoGrid
+            videos={videos.map(videoToCardItem)}
+            showVisibility
+            onVideoClick={handleVideoClick}
+            className="channel-video-grid"
+          />
+        )}
+      </div>
 
-      {/* Live streams */}
-      {activeTab === 'live' && (
-        <div className="channel-video-grid">
-          {liveStreams.length === 0 && (
-            <p className="empty-state">No live streams yet.</p>
-          )}
-          {liveStreams.map((stream) => (
-            <div key={stream.id} className="channel-video-card">
-              <div className="channel-video-thumb">
-                <div className="channel-live-thumb-placeholder">
-                  {stream.status === 'live' && <span className="live-badge">LIVE</span>}
-                </div>
-              </div>
-              <div className="channel-video-info">
-                <h3 className="channel-video-title">{stream.title}</h3>
-                <p className="channel-video-meta">
-                  Status: {stream.status}
-                  {stream.started_at && (
-                    <> · Started {formatRelativeDate(stream.started_at)}</>
-                  )}
-                </p>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      <div
+        id="tab-panel-live"
+        role="tabpanel"
+        aria-label="Live streams"
+        hidden={activeTab !== 'live'}
+      >
+        {liveStreams.length === 0 ? (
+          <EmptyState icon="live" title="No live streams yet" description="This channel hasn't gone live yet." />
+        ) : (
+          <VideoGrid
+            videos={liveStreams.map(streamToCardItem)}
+            getHref={(v) => `/live/watch/${v.id}`}
+            onVideoClick={handleVideoClick}
+            className="channel-video-grid"
+          />
+        )}
+      </div>
     </main>
   );
-}
-
-function formatDuration(seconds: number): string {
-  if (!seconds || seconds <= 0) return '0:00';
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  if (h > 0) {
-    return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  }
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
-
-function formatRelativeDate(dateStr: string): string {
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-  if (diffDays === 0) return 'today';
-  if (diffDays === 1) return 'yesterday';
-  if (diffDays < 7) return `${diffDays} days ago`;
-  if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
-  if (diffDays < 365) return `${Math.floor(diffDays / 30)} months ago`;
-  return `${Math.floor(diffDays / 365)} years ago`;
 }

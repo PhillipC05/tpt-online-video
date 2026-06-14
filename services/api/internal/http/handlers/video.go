@@ -305,9 +305,21 @@ func (h *VideoHandler) UpdateVideo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Title != nil && strings.TrimSpace(*req.Title) == "" {
-		writeError(w, http.StatusBadRequest, "title cannot be empty")
-		return
+	if req.Title != nil {
+		clean, err := validateTitle(*req.Title)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "title: "+err.Error())
+			return
+		}
+		req.Title = &clean
+	}
+	if req.Description != nil {
+		clean, err := validateDescription(*req.Description)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "description: "+err.Error())
+			return
+		}
+		req.Description = &clean
 	}
 
 	validVisibilities := map[string]bool{"public": true, "unlisted": true, "private": true}
@@ -342,7 +354,7 @@ func (h *VideoHandler) UpdateVideo(w http.ResponseWriter, r *http.Request) {
 
 	if req.Title != nil {
 		setClauses = append(setClauses, "title = $"+itoa(i))
-		args = append(args, strings.TrimSpace(*req.Title))
+		args = append(args, *req.Title)
 		i++
 	}
 	if req.Description != nil {

@@ -33,6 +33,7 @@ type Server struct {
 	jwtSecret    string
 	jwtAccessTTL time.Duration
 	frontendURL  string
+	corsOrigins  []string // allowed CORS origins; defaults to frontendURL
 
 	// Live streaming
 	mediamtxHLSBase    string
@@ -43,6 +44,9 @@ type Server struct {
 
 	// Live chat hub (WebSocket room manager)
 	chatHub *svclive.ChatHub
+
+	// Metrics
+	apiMetrics *middleware.APIMetrics
 }
 
 func NewServer(logger *slog.Logger, db *pgxpool.Pool, redis *redis.Client, store storage.Provider, searchProvider search.Provider, baseURL string) *Server {
@@ -62,6 +66,7 @@ func NewServer(logger *slog.Logger, db *pgxpool.Pool, redis *redis.Client, store
 		rtmpBase:           "rtmp://localhost:1935",
 		liveHookSecret:     "changeme-live-hook-secret",
 		chatHub:            svclive.NewChatHub(redis, logger),
+		apiMetrics:         middleware.NewAPIMetrics(),
 	}
 }
 
@@ -75,6 +80,12 @@ func (s *Server) WithJWTSecret(secret string, accessTTL time.Duration) *Server {
 // WithFrontendURL sets the frontend base URL for auth emails.
 func (s *Server) WithFrontendURL(url string) *Server {
 	s.frontendURL = url
+	return s
+}
+
+// WithCORSOrigins sets the list of allowed CORS origins.
+func (s *Server) WithCORSOrigins(origins []string) *Server {
+	s.corsOrigins = origins
 	return s
 }
 
@@ -96,21 +107,18 @@ func (s *Server) Routes() http.Handler {
 	r.Use(chimiddleware.RealIP)
 	r.Use(middleware.Recoverer(s.logger))
 	r.Use(chimiddleware.Timeout(60 * time.Second))
+	r.Use(s.apiMetrics.Middleware)
+	r.Use(middleware.RequestLogger(s.logger))
+	r.Use(middleware.SecurityHeaders)
 
-	// CORS middleware
-	r.Use(func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key")
-			w.Header().Set("Access-Control-Allow-Credentials", "true")
-			if r.Method == "OPTIONS" {
-				w.WriteHeader(http.StatusNoContent)
-				return
-			}
-			next.ServeHTTP(w, r)
-		})
-	})
+	// CORS middleware — origin allowlist; never use wildcard with credentials.
+	// State-changing endpoints require an Authorization: Bearer header, so CSRF is
+	// not applicable for XHR callers; the cookie fallback path is SameSite=Strict.
+	corsOrigins := s.corsOrigins
+	if len(corsOrigins) == 0 {
+		corsOrigins = []string{s.frontendURL}
+	}
+	r.Use(middleware.CORSMiddleware(corsOrigins))
 
 	// Rate limiter (global default)
 	rateLimiter := middleware.NewRateLimiter(
@@ -156,7 +164,8 @@ func (s *Server) Routes() http.Handler {
 	}
 
 	emailSender := auth.NewEmailSender(emailCfg)
-	authHandler := handlers.NewAuthHandler(s.logger, s.db, emailSender, authSvcCfg, authMW)
+	authHandler := handlers.NewAuthHandler(s.logger, s.db, emailSender, authSvcCfg, authMW).
+		WithAllowedOrigins(corsOrigins)
 
 	videoHandler := handlers.NewVideoHandler(s.logger, s.db, s.redis, s.storage, s.search, s.baseURL)
 	searchHandler := handlers.NewSearchHandler(s.logger, s.search)
@@ -310,6 +319,8 @@ func (s *Server) Routes() http.Handler {
 
 		// Admin/moderation routes
 		adminMiddleware := middleware.NewAdminMiddleware(s.logger, s.redis)
+		adminHandler := handlers.NewAdminHandler(s.logger, s.db, s.redis, s.queue, s.storage, s.search).
+			WithChatHub(s.chatHub)
 		r.Group(func(r chi.Router) {
 			r.Use(adminMiddleware.AdminAuditLog)
 			r.Use(adminMiddleware.RequireModOrAdmin)
@@ -339,6 +350,24 @@ func (s *Server) Routes() http.Handler {
 
 			// Admin health
 			r.Get("/api/v1/admin/health", s.adminHealth)
+
+			// User management (admin only enforced in handler for role/status changes)
+			r.Get("/api/v1/admin/users", adminHandler.ListUsers)
+			r.Patch("/api/v1/admin/users/{userID}", adminHandler.UpdateUser)
+
+			// Video management
+			r.Get("/api/v1/admin/videos", adminHandler.ListVideos)
+			r.Patch("/api/v1/admin/videos/{videoID}", adminHandler.UpdateVideo)
+			r.Delete("/api/v1/admin/videos/{videoID}", adminHandler.DeleteVideo)
+
+			// Comment management
+			r.Get("/api/v1/admin/comments", adminHandler.ListComments)
+			r.Patch("/api/v1/admin/comments/{commentID}", adminHandler.UpdateComment)
+
+			// System status, metrics, and settings
+			r.Get("/api/v1/admin/system/status", adminHandler.SystemStatus)
+			r.Get("/api/v1/admin/system/metrics", s.apiMetrics.Handler())
+			r.Get("/api/v1/admin/settings", adminHandler.GetSettings)
 		})
 	})
 

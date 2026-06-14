@@ -246,6 +246,7 @@ func (p *Processor) processJob(ctx context.Context, result *media.ClaimResult) e
 	}()
 
 	if err := cmd.Wait(); err != nil {
+		p.metrics.RecordFFmpegFailure()
 		return media.ClassifyFFmpegError(fmt.Errorf("ffmpeg failed: %w", err))
 	}
 

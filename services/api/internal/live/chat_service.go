@@ -87,6 +87,7 @@ func (s *ChatService) SendMessage(ctx context.Context, streamID, userID, display
 	if pubErr := s.hub.Publish(ctx, streamID, payload); pubErr != nil {
 		s.logger.Warn("chat publish failed", "stream_id", streamID, "error", pubErr)
 	}
+	s.hub.RecordMessage()
 	return msg, nil
 }
 

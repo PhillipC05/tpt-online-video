@@ -13,11 +13,12 @@ import (
 // WorkerMetrics tracks counters and gauges for the transcoding worker.
 // All operations are safe for concurrent use.
 type WorkerMetrics struct {
-	JobsStarted    atomic.Int64
-	JobsCompleted  atomic.Int64
-	JobsFailed     atomic.Int64
-	JobsPermanent  atomic.Int64 // failures routed straight to DLQ
-	ActiveWorkers  atomic.Int32
+	JobsStarted     atomic.Int64
+	JobsCompleted   atomic.Int64
+	JobsFailed      atomic.Int64
+	JobsPermanent   atomic.Int64 // failures routed straight to DLQ
+	FFmpegFailures  atomic.Int64 // jobs that failed specifically due to FFmpeg
+	ActiveWorkers   atomic.Int32
 	TotalDurationMs atomic.Int64 // cumulative processing time in milliseconds
 }
 
@@ -45,6 +46,12 @@ func (m *WorkerMetrics) RecordFailure(permanent bool) {
 	if permanent {
 		m.JobsPermanent.Add(1)
 	}
+}
+
+// RecordFFmpegFailure increments the counter for jobs that failed due to FFmpeg.
+// Call this in addition to RecordFailure when the error originates from FFmpeg.
+func (m *WorkerMetrics) RecordFFmpegFailure() {
+	m.FFmpegFailures.Add(1)
 }
 
 // WritePrometheus writes all metrics to w in Prometheus text exposition format.
@@ -77,6 +84,11 @@ func (m *WorkerMetrics) WritePrometheus(w io.Writer) {
 		"Number of jobs currently being processed.",
 		"gauge",
 		fmt.Sprintf("%d", m.ActiveWorkers.Load()))
+
+	write("worker_ffmpeg_failures_total",
+		"Total number of jobs that failed specifically due to FFmpeg errors.",
+		"counter",
+		fmt.Sprintf("%d", m.FFmpegFailures.Load()))
 
 	write("worker_processing_duration_ms_total",
 		"Cumulative processing time across all completed jobs in milliseconds.",

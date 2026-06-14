@@ -736,86 +736,86 @@ Goal: Build a public, self-hostable, open-source YouTube-like platform with VOD,
 
 ## Phase 22 — Frontend App (continued)
 
-- [ ] Create API client
-- [ ] Create auth client
-- [ ] Create WebSocket client
-- [ ] Create video card components
-- [ ] Create video grid components
-- [ ] Create search page
-- [ ] Create channel page
-- [ ] Create live page
-- [ ] Create admin pages
-- [ ] Create moderation pages
-- [ ] Create live streaming pages
-- [ ] Create dark/light theme
-- [ ] Create empty states
-- [ ] Create forms
-- [ ] Add accessibility checks
-- [ ] Add frontend tests
+- [x] Create API client
+- [x] Create auth client
+- [x] Create WebSocket client
+- [x] Create video card components
+- [x] Create video grid components
+- [x] Create search page
+- [x] Create channel page
+- [x] Create live page
+- [x] Create admin pages
+- [x] Create moderation pages
+- [x] Create live streaming pages
+- [x] Create dark/light theme
+- [x] Create empty states
+- [x] Create forms
+- [x] Add accessibility checks
+- [x] Add frontend tests
 
 ## Phase 23 — Admin Dashboard
 
-- [ ] Implement admin home
-- [ ] Implement user management
-- [ ] Implement video management
-- [ ] Implement comment management
-- [ ] Implement report queue
-- [ ] Implement moderation action history
-- [ ] Implement audit log viewer
-- [ ] Implement system status page
-  - [ ] API health
-  - [ ] Postgres health
-  - [ ] Redis health
-  - [ ] Storage health
-  - [ ] Queue depth
-  - [ ] Worker count
-  - [ ] Live stream count
-- [ ] Implement admin settings
-  - [ ] Storage provider settings
-  - [ ] Search provider settings
-  - [ ] Moderation settings
-  - [ ] Live settings
+- [x] Implement admin home
+- [x] Implement user management
+- [x] Implement video management
+- [x] Implement comment management
+- [x] Implement report queue
+- [x] Implement moderation action history
+- [x] Implement audit log viewer
+- [x] Implement system status page
+  - [x] API health
+  - [x] Postgres health
+  - [x] Redis health
+  - [x] Storage health
+  - [x] Queue depth
+  - [x] Worker count
+  - [x] Live stream count
+- [x] Implement admin settings
+  - [x] Storage provider settings
+  - [x] Search provider settings
+  - [x] Moderation settings
+  - [x] Live settings
 
 ## Phase 24 — Metrics and Observability
 
-- [ ] Add API metrics
-  - [ ] Request count
-  - [ ] Request duration
-  - [ ] Error count
-  - [ ] Auth failures
-- [ ] Add worker metrics
-  - [ ] Jobs processed
-  - [ ] Jobs failed
-  - [ ] Queue depth
-  - [ ] Transcoding duration
-  - [ ] FFmpeg failures
-- [ ] Add live metrics
-  - [ ] Active streams
-  - [ ] Active viewers
-  - [ ] Chat messages
-  - [ ] DVR segment count
+- [x] Add API metrics
+  - [x] Request count
+  - [x] Request duration
+  - [x] Error count
+  - [x] Auth failures
+- [x] Add worker metrics
+  - [x] Jobs processed
+  - [x] Jobs failed
+  - [x] Queue depth (via admin system/status)
+  - [x] Transcoding duration
+  - [x] FFmpeg failures
+- [x] Add live metrics
+  - [x] Active streams
+  - [x] Active viewers
+  - [x] Chat messages
+  - [x] DVR segment count (dvr_enabled_streams gauge)
 - [ ] Add Prometheus metrics endpoint later
 - [ ] Add Grafana dashboard later
-- [ ] Add structured log correlation
-- [ ] Add audit log query helpers
+- [x] Add structured log correlation
+- [x] Add audit log query helpers
 
 ## Phase 25 — Security
 
-- [ ] Validate all user input
-- [ ] Sanitize rich text if used
-- [ ] Prevent open redirects
-- [ ] Secure OAuth state/PKCE
-- [ ] Secure stream keys
-- [ ] Secure presigned URLs
-- [ ] Add upload size limits
-- [ ] Add rate limits
-- [ ] Add brute-force protection
-- [ ] Add CORS policy
-- [ ] Add CSRF strategy if cookie sessions are used
-- [ ] Add content ownership checks
-- [ ] Add admin authorization checks
-- [ ] Add secret rotation docs
-- [ ] Add security checklist
+- [x] Validate all user input
+- [x] Sanitize rich text if used
+- [x] Prevent open redirects
+- [x] Secure OAuth state/PKCE
+- [x] Secure stream keys
+- [x] Secure presigned URLs
+- [x] Add upload size limits
+- [x] Add rate limits
+- [x] Add brute-force protection
+- [x] Add CORS policy
+- [x] Add CSRF strategy if cookie sessions are used
+- [x] Add content ownership checks
+- [x] Add admin authorization checks
+- [x] Add secret rotation docs
+- [x] Add security checklist
 
 ## Phase 26 — Testing
 

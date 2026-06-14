@@ -58,7 +58,7 @@ export default function VideoCard({ video, href, onClick, showVisibility = false
             <span>{video.view_count.toLocaleString()} views</span>
           )}
           {dateStr && <span>{formatRelativeDate(dateStr)}</span>}
-          {video.media_type && (
+          {video.media_type && video.media_type !== 'live' && (
             <span className="video-card-type-badge">{video.media_type.toUpperCase()}</span>
           )}
         </div>

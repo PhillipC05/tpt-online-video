@@ -180,33 +180,38 @@ export default function CommentSection({ videoId, currentUserId }: CommentSectio
 
       {/* New comment form */}
       {currentUserId ? (
-        <form className="comment-form" onSubmit={handleCreateComment}>
+        <form className="comment-form" onSubmit={handleCreateComment} aria-label="Add a comment">
+          <label htmlFor="new-comment" className="sr-only">Add a comment</label>
           <textarea
+            id="new-comment"
             className="comment-input"
             placeholder="Add a comment…"
             value={newBody}
             onChange={(e) => setNewBody(e.target.value)}
             rows={3}
             maxLength={5000}
+            aria-describedby="new-comment-count"
           />
           <div className="comment-form-actions">
-            <span className="comment-char-count">{newBody.length}/5000</span>
-            <button type="submit" className="comment-btn" disabled={sending || !newBody.trim()}>
+            <span id="new-comment-count" className="comment-char-count" aria-live="polite">
+              {newBody.length}/5000
+            </span>
+            <button type="submit" className="comment-btn" disabled={sending || !newBody.trim()} aria-busy={sending}>
               {sending ? 'Posting…' : 'Comment'}
             </button>
           </div>
         </form>
       ) : (
         <p className="comment-login-prompt">
-          <a href="/auth/login" style={{ color: '#60a5fa' }}>Log in</a> to leave a comment.
+          <a href="/login" style={{ color: '#60a5fa' }}>Log in</a> to leave a comment.
         </p>
       )}
 
       {/* Comment list */}
       {loading ? (
-        <p className="comment-loading">Loading comments…</p>
+        <p className="comment-loading" aria-live="polite" aria-busy="true">Loading comments…</p>
       ) : comments.length === 0 ? (
-        <p className="comment-empty">No comments yet. Be the first!</p>
+        <p className="comment-empty" role="status">No comments yet. Be the first!</p>
       ) : (
         <div className="comment-list">
           {comments.map((comment) => (
@@ -292,10 +297,11 @@ function CommentCard({
           className={`comment-action-btn${comment.liked ? ' comment-action-btn--active' : ''}`}
           onClick={() => onLike(comment.id, comment.liked)}
           disabled={!currentUserId}
+          aria-label={comment.liked ? `Unlike (${comment.like_count})` : `Like (${comment.like_count})`}
+          aria-pressed={comment.liked}
           title={currentUserId ? (comment.liked ? 'Unlike' : 'Like') : 'Log in to like'}
         >
-          {comment.liked ? '👍' : '👍'} {comment.liked && comment.like_count > 1 ? '' : ''}
-          {comment.like_count > 0 && <span className="comment-like-count">{comment.like_count}</span>}
+          👍 {comment.like_count > 0 && <span className="comment-like-count" aria-hidden="true">{comment.like_count}</span>}
         </button>
 
         {/* Reply button */}
@@ -303,6 +309,8 @@ function CommentCard({
           <button
             className="comment-action-btn"
             onClick={() => onReplyToggle(comment.id)}
+            aria-expanded={replyTo === comment.id}
+            aria-controls={`reply-form-${comment.id}`}
           >
             {replyTo === comment.id ? 'Cancel' : 'Reply'}
           </button>
@@ -331,8 +339,12 @@ function CommentCard({
 
       {/* Reply form */}
       {replyTo === comment.id && (
-        <div className="comment-reply-form">
+        <div id={`reply-form-${comment.id}`} className="comment-reply-form">
+          <label htmlFor={`reply-input-${comment.id}`} className="sr-only">
+            Reply to {comment.owner?.display_name ?? 'comment'}
+          </label>
           <textarea
+            id={`reply-input-${comment.id}`}
             className="comment-input"
             placeholder="Write a reply…"
             value={replyBodies[comment.id] || ''}

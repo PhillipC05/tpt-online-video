@@ -97,27 +97,34 @@ export default function UploadPage() {
     <main className="app-shell">
       <div className="card" style={{ maxWidth: '600px', margin: '0 auto' }}>
         <h2>Upload a video</h2>
-        <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: '1rem' }}>
+        <form onSubmit={handleSubmit} aria-busy={uploading}>
+          <div className="form-field" style={{ marginBottom: '1rem' }}>
+            <label htmlFor="video-file">Video file</label>
             <input
+              id="video-file"
               type="file"
               accept="video/*"
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
               disabled={uploading}
-              style={{ width: '100%' }}
+              aria-describedby={error ? 'upload-error' : undefined}
             />
           </div>
 
           {error && (
-            <div style={{ color: 'var(--error)', marginBottom: '1rem' }}>
+            <p id="upload-error" role="alert" className="form-error" style={{ marginBottom: '1rem' }}>
               {error}
-            </div>
+            </p>
           )}
 
           {uploading && (
             <div style={{ marginBottom: '1rem' }}>
-              <progress value={progress} max={100} style={{ width: '100%' }} />
-              <p style={{ fontSize: '0.875rem', textAlign: 'center' }}>
+              <progress
+                value={progress}
+                max={100}
+                style={{ width: '100%' }}
+                aria-label={`Upload progress: ${progress}%`}
+              />
+              <p style={{ fontSize: '0.875rem', textAlign: 'center' }} aria-live="polite">
                 Uploading: {progress}%
               </p>
             </div>
@@ -127,8 +134,9 @@ export default function UploadPage() {
             type="submit"
             disabled={!file || uploading}
             className="button"
+            aria-busy={uploading}
           >
-            {uploading ? 'Uploading...' : 'Upload'}
+            {uploading ? 'Uploading…' : 'Upload'}
           </button>
         </form>
       </div>

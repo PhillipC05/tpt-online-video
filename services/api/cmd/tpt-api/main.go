@@ -60,6 +60,7 @@ func main() {
 	srv := httpapi.NewServer(logger, db, redisClient, store, searchProvider, cfg.BaseURL).
 		WithJWTSecret(cfg.JWTSecret, cfg.JWTAccessTTL).
 		WithFrontendURL(cfg.FrontendBaseURL).
+		WithCORSOrigins(cfg.CORSOrigins).
 		WithLiveConfig(cfg.MediaMTXHLSBaseURL, cfg.MediaMTXWebRTCBaseURL, cfg.RTMPBaseURL, cfg.LiveHookSecret, cfg.MediaMTXHLSDirectory)
 
 	if err := srv.EnsureQueueGroup(ctx); err != nil {
