@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 type DashboardStats = {
   open_reports: number;
@@ -79,32 +79,7 @@ export default function ModerationDashboard() {
   const [statusFilter, setStatusFilter] = useState('');
   const [targetFilter, setTargetFilter] = useState('');
 
-  useEffect(() => {
-    if (tab === 'dashboard') {
-      loadStats();
-    } else if (tab === 'reports') {
-      loadReports();
-    } else if (tab === 'actions') {
-      loadActions();
-    } else if (tab === 'audit') {
-      loadAuditLog();
-    }
-  }, [tab, statusFilter, targetFilter]);
-
-  async function loadStats() {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await api('/api/v1/admin/moderation/stats');
-      setStats(data as DashboardStats);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load stats');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function loadReports() {
+  const loadReports = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -121,9 +96,9 @@ export default function ModerationDashboard() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [statusFilter, targetFilter]);
 
-  async function loadActions() {
+  const loadActions = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -135,6 +110,31 @@ export default function ModerationDashboard() {
       setActions(data.actions as ModerationAction[]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load actions');
+    } finally {
+      setLoading(false);
+    }
+  }, [targetFilter]);
+
+  useEffect(() => {
+    if (tab === 'dashboard') {
+      loadStats();
+    } else if (tab === 'reports') {
+      loadReports();
+    } else if (tab === 'actions') {
+      loadActions();
+    } else if (tab === 'audit') {
+      loadAuditLog();
+    }
+  }, [tab, statusFilter, targetFilter, loadActions, loadReports]);
+
+  async function loadStats() {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await api('/api/v1/admin/moderation/stats');
+      setStats(data as DashboardStats);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load stats');
     } finally {
       setLoading(false);
     }

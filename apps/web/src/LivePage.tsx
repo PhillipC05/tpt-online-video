@@ -1,5 +1,4 @@
 import { useState, FormEvent, useEffect } from 'react';
-import LivePlayer, { LiveStreamInfo } from './LivePlayer';
 
 type LiveStreamResponse = {
   id: string;
@@ -23,19 +22,13 @@ type CreateResponse = {
   stream_key_url: string;
 };
 
-type AuthResponse = {
-  success: boolean;
-  data?: { id: string; email: string; display_name: string };
-  error?: { code: string; message: string };
-};
-
 const API_BASE = '/api/v1';
 
 function getToken(): string | null {
   return localStorage.getItem('token');
 }
 
-async function apiFetch(path: string, options: RequestInit = {}): Promise<any> {
+async function apiFetch<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -49,7 +42,7 @@ async function apiFetch(path: string, options: RequestInit = {}): Promise<any> {
   if (!body.success) {
     throw new Error(body.error?.message || `HTTP ${res.status}`);
   }
-  return body.data;
+  return body.data as T;
 }
 
 export default function LivePage() {
@@ -70,12 +63,12 @@ export default function LivePage() {
   useEffect(() => {
     async function load() {
       try {
-        const authData = await apiFetch('/auth/me');
+        const authData = await apiFetch<{ id: string; email: string; display_name: string }>('/auth/me');
         setUser(authData);
-        const myStreams = await apiFetch('/live/streams');
+        const myStreams = await apiFetch<LiveStreamResponse[]>('/live/streams');
         setStreams(myStreams);
-      } catch (err: any) {
-        setError(err.message);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
       } finally {
         setLoading(false);
       }
@@ -99,7 +92,7 @@ export default function LivePage() {
     setCreating(true);
     setError(null);
     try {
-      const data = await apiFetch('/live/streams', {
+      const data = await apiFetch<CreateResponse>('/live/streams', {
         method: 'POST',
         body: JSON.stringify({
           title: title.trim(),
@@ -111,10 +104,10 @@ export default function LivePage() {
       setTitle('');
       setDescription('');
       // Refresh list
-      const myStreams = await apiFetch('/live/streams');
+      const myStreams = await apiFetch<LiveStreamResponse[]>('/live/streams');
       setStreams(myStreams);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setCreating(false);
     }
@@ -128,8 +121,8 @@ export default function LivePage() {
       if (result?.stream.id === streamId) {
         setResult(null);
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     }
   }
 

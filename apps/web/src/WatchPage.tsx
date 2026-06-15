@@ -414,7 +414,7 @@ export default function WatchPage({ videoId }: { videoId: string }) {
           e.preventDefault();
           setCcEnabled((v) => {
             const next = !v;
-            (playerRef.current as any)?.setTextTrackVisibility(next);
+            playerRef.current?.setTextTrackVisibility(next);
             return next;
           });
           break;

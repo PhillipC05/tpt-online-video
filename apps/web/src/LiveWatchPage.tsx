@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import LiveChat from './LiveChat';
 import LivePlayer, { LiveStreamInfo } from './LivePlayer';
 
@@ -33,6 +33,7 @@ export default function LiveWatchPage({ streamId }: { streamId: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [streamEnded, setStreamEnded] = useState(false);
+  const streamEndedRef = useRef(false);
   const currentUser = getStoredUser();
 
   // Fetch stream metadata
@@ -69,6 +70,7 @@ export default function LiveWatchPage({ streamId }: { streamId: string }) {
 
           // If stream is ended, stop polling
           if (streamData.status === 'ended' || streamData.status === 'idle') {
+            streamEndedRef.current = true;
             setStreamEnded(true);
             if (pollInterval) clearInterval(pollInterval);
           }
@@ -85,7 +87,7 @@ export default function LiveWatchPage({ streamId }: { streamId: string }) {
 
     // Poll for status changes if stream is live
     pollInterval = setInterval(() => {
-      if (streamEnded) return;
+      if (streamEndedRef.current) return;
       fetchStream();
     }, 10000); // every 10s
 

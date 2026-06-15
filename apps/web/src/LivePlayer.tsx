@@ -160,7 +160,6 @@ export default function LivePlayer({ stream }: LivePlayerProps) {
     try {
       const p = new shaka.Player();
       shakaRef.current = p;
-      const pa = p as any;
 
       p.configure({
         streaming: {
@@ -181,17 +180,17 @@ export default function LivePlayer({ stream }: LivePlayerProps) {
         },
       });
 
-      pa.addEventListener('buffering', (e: CustomEvent<{ buffering: boolean }>) => {
+      p.addEventListener('buffering', (e: CustomEvent<{ buffering: boolean }>) => {
         setIsBuffering(e.detail.buffering);
       });
 
-      pa.addEventListener('error', (e: CustomEvent<{ code?: number; message?: string } | null>) => {
+      p.addEventListener('error', (e: CustomEvent<{ code?: number; message?: string } | null>) => {
         const err = e.detail;
         console.error('Shaka error:', err?.code, err?.message);
       });
 
       await p.attach(videoRef.current);
-      await pa.load(stream.hls_url);
+      await p.load(stream.hls_url);
       setMode('hls');
 
       latencyIntervalRef.current = setInterval(() => {
