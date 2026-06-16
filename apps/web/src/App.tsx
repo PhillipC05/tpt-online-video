@@ -7,7 +7,7 @@ import LivePage from './LivePage';
 import LiveWatchPage from './LiveWatchPage';
 import LoginPage from './LoginPage';
 import { AdminShell } from './admin';
-import { getCurrentUser, logout, type CurrentUser } from './api/auth';
+import { initAuth, getCurrentUser, logout, type CurrentUser } from './api/auth';
 
 type Theme = 'dark' | 'light';
 
@@ -66,9 +66,10 @@ export default function App() {
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
-  // Load current user
+  // Silently refresh the access token on mount using the HttpOnly refresh cookie,
+  // then fetch the current user. Falls back to null (unauthenticated) on failure.
   useEffect(() => {
-    getCurrentUser()
+    initAuth()
       .then(setUser)
       .catch(() => setUser(null));
   }, []);
@@ -236,7 +237,7 @@ export default function App() {
           <article className="card">
             <h2>Implemented foundation</h2>
             <ul>
-              <li>MIT license and README</li>
+              <li>Apache 2.0 license and README</li>
               <li>Docker Compose infrastructure</li>
               <li>Go API, worker, and live service skeletons</li>
               <li>PostgreSQL schema and migrations</li>

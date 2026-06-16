@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -18,6 +17,7 @@ import (
 	"github.com/tpt-online-video/packages/media"
 	"github.com/tpt-online-video/packages/moderation"
 	"github.com/tpt-online-video/packages/storage"
+	"github.com/tpt-online-video/services/api/internal/http/middleware"
 )
 
 const (
@@ -116,7 +116,7 @@ func (h *UploadHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get user from context
-	userID := getUserID(r.Context())
+	userID := middleware.GetUserID(r)
 	if userID == "" {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
@@ -181,10 +181,16 @@ type ChunkUploadResponse struct {
 func (h *UploadHandler) UploadChunk(w http.ResponseWriter, r *http.Request) {
 	sessionID := chi.URLParam(r, "sessionID")
 
+	userID := middleware.GetUserID(r)
+	if userID == "" {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
 	var byteSize int64
 	var status string
 	err := h.db.QueryRow(r.Context(),
-		`SELECT byte_size, status FROM upload_sessions WHERE id = $1`, sessionID,
+		`SELECT byte_size, status FROM upload_sessions WHERE id = $1 AND user_id = $2`, sessionID, userID,
 	).Scan(&byteSize, &status)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -200,13 +206,17 @@ func (h *UploadHandler) UploadChunk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Read the chunk
-	data, err := io.ReadAll(r.Body)
+	// Read the chunk, capped at the declared session size + 1 byte to detect over-sized bodies.
+	data, err := io.ReadAll(io.LimitReader(r.Body, byteSize+1))
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "failed to read chunk"})
 		return
 	}
 	defer r.Body.Close()
+	if int64(len(data)) > byteSize {
+		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "chunk exceeds declared file size"})
+		return
+	}
 
 	// Scan chunk for malware before storing
 	scanResult, scanErr := h.scanner.Scan(r.Context(), sessionID, bytes.NewReader(data))
@@ -257,7 +267,7 @@ type CompleteUploadResponse struct {
 func (h *UploadHandler) CompleteUpload(w http.ResponseWriter, r *http.Request) {
 	sessionID := chi.URLParam(r, "sessionID")
 
-	userID := getUserID(r.Context())
+	userID := middleware.GetUserID(r)
 	if userID == "" {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
@@ -349,7 +359,7 @@ func (h *UploadHandler) CompleteUpload(w http.ResponseWriter, r *http.Request) {
 func (h *UploadHandler) CancelUpload(w http.ResponseWriter, r *http.Request) {
 	sessionID := chi.URLParam(r, "sessionID")
 
-	userID := getUserID(r.Context())
+	userID := middleware.GetUserID(r)
 	if userID == "" {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
@@ -407,7 +417,7 @@ func (h *UploadHandler) CancelUpload(w http.ResponseWriter, r *http.Request) {
 func (h *UploadHandler) GetUploadStatus(w http.ResponseWriter, r *http.Request) {
 	sessionID := chi.URLParam(r, "sessionID")
 
-	userID := getUserID(r.Context())
+	userID := middleware.GetUserID(r)
 	if userID == "" {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
@@ -445,7 +455,7 @@ func (h *UploadHandler) GetUploadStatus(w http.ResponseWriter, r *http.Request) 
 
 // ListUploadSessions returns all upload sessions for the authenticated user.
 func (h *UploadHandler) ListUploadSessions(w http.ResponseWriter, r *http.Request) {
-	userID := getUserID(r.Context())
+	userID := middleware.GetUserID(r)
 	if userID == "" {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
@@ -494,13 +504,3 @@ func (h *UploadHandler) ListUploadSessions(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, sessions)
 }
 
-// getUserID extracts the user ID from request context.
-// Stub until auth middleware is fully wired.
-func getUserID(ctx context.Context) string {
-	// For now, return a placeholder or read from context
-	// In production, this reads from JWT claims set by auth middleware
-	if userID, ok := ctx.Value("user_id").(string); ok {
-		return userID
-	}
-	return ""
-}

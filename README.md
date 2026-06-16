@@ -1,110 +1,71 @@
 # TPT Online Video
 
-**TPT Online Video** is an MIT-licensed, self-hostable online video platform inspired by YouTube, built as a systems-engineering project rather than a simple CRUD upload site.
+**TPT Online Video** is an Apache 2.0-licensed, self-hostable online video platform inspired by YouTube — built as a real distributed media infrastructure project, not a simple CRUD upload site.
 
-The goal is to provide a public, self-hosted platform with real distributed media infrastructure:
+## Features
 
-- VOD upload and resumable uploads
-- FFmpeg-based transcoding pipeline
-- Adaptive bitrate HLS playback
-- Abstracted object storage for local filesystem, S3-compatible providers, and Wasabi
-- Redis-backed job queue with worker scaling design
-- PostgreSQL metadata, auth, search, comments, and moderation
-- RTMP live ingest from OBS
-- HLS live playback
-- WebRTC low-latency playback path
-- Live DVR sliding-window design
-- Real-time live chat
-- Full moderation workflow and audit log
-- Docker Compose local deployment
-- Fully containerized production deployment (single `docker compose up`)
-- Windows and Linux self-contained installer
+| Feature | Status |
+|---|---|
+| Resumable VOD uploads (presigned + chunked) | ✅ |
+| FFmpeg transcoding pipeline with HLS renditions | ✅ |
+| Adaptive bitrate playback (Shaka Player) | ✅ |
+| PostgreSQL FTS search with filters and ranking | ✅ |
+| Comments and engagement | ✅ |
+| JWT + opaque refresh token auth with token rotation | ✅ |
+| Argon2id password hashing | ✅ |
+| Roles and permissions (admin / moderator / user) | ✅ |
+| Full moderation workflow and audit log | ✅ |
+| RTMP live ingest (OBS / ffmpeg) | ✅ |
+| HLS live playback | ✅ |
+| WebRTC/WHEP low-latency playback | ✅ (experimental) |
+| Live DVR sliding-window rewind | ✅ |
+| Real-time live chat (WebSocket) | ✅ |
+| Abstracted storage (local filesystem / S3 / Wasabi) | ✅ |
+| Docker Compose local dev stack | ✅ |
+| Fully containerized production stack | ✅ |
+| Windows self-contained installer | ✅ |
+| Linux self-contained installer | ✅ |
 
-## Status
-
-This repository is currently in the foundational scaffolding phase.
-
-Completed:
-
-- Project vision and architecture plan
-- MIT license
-- Master TODO checklist
-- Initial repository structure
-- Docker Compose foundation
-- Go service skeletons
-- React frontend skeleton
-- Initial database schema
-- Storage/search/auth abstractions
-- Production Docker Compose stack
-- Platform deployment guides (DigitalOcean, Linode, generic VPS, Windows)
-
-Remaining major work:
-
-- Full upload/transcoding pipeline
-- Full auth implementation
-- Full moderation workflow
-- Full live streaming integration
-- Installer packaging
-- Public v1 hardening
-- Federation / ActivityPub (future)
-
-See [`TODO.md`](./TODO.md) for the complete task checklist.
-
-## High-Level Architecture
+## Architecture
 
 ```text
-React Web UI
-    |
-    v
-Go API
-    |
-    |--> PostgreSQL
-    |--> Redis
-    |--> Storage Abstraction
-    |       |--> Local filesystem
-    |       |--> S3-compatible
-    |       |--> Wasabi
-    |
-    |--> Search Abstraction
-    |       |--> PostgreSQL FTS first
-    |       |--> Meilisearch later
-    |
-    |--> Transcoding Queue
-            |
-            v
-        Go Worker
-            |
-            v
-          FFmpeg
-            |
-            v
-        HLS Renditions
+React Web UI (Vite + TypeScript)
+    │
+    ▼
+Go API (chi, JWT, PostgreSQL, Redis)
+    ├── PostgreSQL (metadata, auth, search, comments, moderation)
+    ├── Redis (job queue, rate limiting, chat pub/sub)
+    ├── Storage abstraction
+    │       ├── Local filesystem
+    │       ├── MinIO / S3-compatible
+    │       └── Wasabi
+    └── Transcoding queue
+            │
+            ▼
+        Go Worker → FFmpeg → HLS renditions → Storage
 
-OBS / Live Encoder
-    |
-    v
+OBS / Encoder
+    │  (RTMP)
+    ▼
 MediaMTX
-    |
-    |--> HLS live output
-    |--> WebRTC/WHEP output
-    |--> DVR sliding window
+    ├── HLS live output
+    ├── WebRTC/WHEP output
+    └── DVR sliding window
 ```
 
 ## Repository Layout
 
 ```text
 apps/
-  web/                         React + TypeScript frontend (@tpt/web)
+  web/                         React + TypeScript frontend
 
 packages/
-  shared/                      Shared Go types/utilities
-  storage/                     Storage provider abstraction
-  search/                      Search provider abstraction
-  auth/                        Auth primitives and interfaces
-  media/                       Media/transcoding helpers
-  moderation/                  Moderation primitives
-  types/                       Shared TypeScript types (@tpt/types)
-  tsconfig/                    Shared TypeScript config presets (@tpt/tsconfig)
+  auth/                        Argon2id hashing, JWT, token management
+  media/                       FFmpeg transcoding helpers
+  moderation/                  File type validation, ClamAV scanner interface
+  search/                      Search provider abstraction (PostgreSQL FTS + Meilisearch)
+  storage/                     Storage provider abstraction (local, S3, Wasabi)
+  shared/                      Health check helpers
 
 services/
   api/                         Go HTTP API
@@ -112,31 +73,13 @@ services/
   live/                        Go live-service helper
 
 infra/
-  docker/                      Docker Compose and service configs
-    mediamtx/                  MediaMTX configuration
-    nginx/                     Containerized nginx config
-  installer/                   Self-contained installer scripts
-    linux/                     Systemd-based Linux installer
-    windows/                   PowerShell/winsw Windows installer
-    common/                    Shared configuration templates
-  nginx/                       Production reverse proxy configs (for hybrid deployment)
+  installer/linux/             Systemd-based Linux installer
+  installer/windows/           PowerShell/WinSW Windows installer
+  nginx/                       Production reverse proxy configs
 
-docs/
-  architecture.md
-  developer-guide.md
-  deployment.md
-  deployment/                  Platform-specific deployment guides
-  storage-providers.md
-  live-streaming.md
-  moderation.md
-  roadmap.md
-  module-boundaries.md
-  dependency-management.md
-  diagrams/
+migrations/                    PostgreSQL migrations (golang-migrate)
 
-migrations/
-  000001_init.up.sql
-  000001_init.down.sql
+docs/                          Full documentation
 ```
 
 ## Quick Start
@@ -145,11 +88,10 @@ migrations/
 
 - Docker and Docker Compose
 - Go 1.22+
-- Node.js 20+
-- pnpm or npm
-- FFmpeg for local worker testing
+- Node.js 20+ with pnpm
+- FFmpeg (for local transcoding)
 
-### Fully containerized (single command)
+### Production (single command)
 
 ```bash
 docker compose -f docker-compose.prod.yml build
@@ -158,49 +100,63 @@ docker compose -f docker-compose.prod.yml up -d
 
 Access the app at `http://localhost`.
 
-### Hybrid (development)
+### Development (hybrid)
 
 ```bash
 # Start infrastructure
-docker compose up postgres redis minio mediamtx
+docker compose up -d postgres redis minio mediamtx
+
+# Copy and edit environment
+cp .env.example .env
 
 # Run the API
 cd services/api && go run ./cmd/tpt-api
 
+# Run the worker (separate terminal)
+cd services/worker && go run ./cmd/tpt-worker
+
 # Run the frontend (separate terminal)
-cd apps/web && npm install && npm run dev
+cd apps/web && pnpm install && pnpm dev
 ```
+
+## Configuration
+
+All configuration is via environment variables. See [`.env.example`](./.env.example) for the full list.
+
+Key variables:
+
+| Variable | Description | Default |
+|---|---|---|
+| `JWT_SECRET` | JWT signing secret (**must change in production**) | `change-me-in-development` |
+| `LIVE_HOOK_SECRET` | MediaMTX webhook secret (**must change in production**) | `changeme-live-hook-secret` |
+| `STORAGE_PROVIDER` | `local`, `s3`, or `wasabi` | `local` |
+| `POSTGRES_SSLMODE` | PostgreSQL SSL mode | `disable` |
+| `EMAIL_PROVIDER` | `log`, `smtp` | `log` |
+| `APP_ENV` | `development` or `production` | `development` |
 
 ## Deployment Guides
 
 | Platform | Guide |
 |---|---|
-| DigitalOcean | [docs/deployment/digitalocean.md](./docs/deployment/digitalocean.md) |
+| Any VPS (generic) | [docs/deployment/generic-vps.md](./docs/deployment/generic-vps.md) |
 | Linode | [docs/deployment/linode.md](./docs/deployment/linode.md) |
-| Any VPS | [docs/deployment/generic-vps.md](./docs/deployment/generic-vps.md) |
 | Windows Desktop | [docs/deployment/windows-desktop.md](./docs/deployment/windows-desktop.md) |
-
-## Dependency Management
-
-**Go backend:** Go workspace (`go.work`) manages all Go modules under `packages/` and `services/`.
-
-**Frontend:** pnpm workspace manages the React frontend and shared TypeScript packages.
-
-See [`docs/dependency-management.md`](./docs/dependency-management.md) for details.
+| Linux installer | [docs/installer.md](./docs/installer.md) |
 
 ## Documentation
 
 - [Architecture](./docs/architecture.md)
-- [Module Boundaries](./docs/module-boundaries.md)
-- [Dependency Management](./docs/dependency-management.md)
-- [Deployment](./docs/deployment.md)
+- [API Reference](./docs/api.md)
 - [Developer Guide](./docs/developer-guide.md)
-- [Storage Providers](./docs/storage-providers.md)
 - [Live Streaming](./docs/live-streaming.md)
+- [Live Chat](./docs/live-chat.md)
+- [Live DVR](./docs/live-dvr.md)
+- [Storage Providers](./docs/storage-providers.md)
 - [Moderation](./docs/moderation.md)
+- [Security](./docs/security.md)
+- [Testing](./docs/testing.md)
 - [Roadmap](./docs/roadmap.md)
-- [Master TODO](./TODO.md)
 
 ## License
 
-MIT. See [`LICENSE`](./LICENSE).
+[Apache 2.0](./LICENSE)

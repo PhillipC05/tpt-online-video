@@ -21,6 +21,8 @@ type AuthHandler struct {
 	svc            *svcauth.Service
 	authMW         *middleware.AuthMiddleware
 	allowedOrigins []string // used to validate OAuth redirect_uri
+	accessTTL      time.Duration
+	refreshTTL     time.Duration
 }
 
 // NewAuthHandler creates a new auth handler.
@@ -28,10 +30,43 @@ func NewAuthHandler(logger *slog.Logger, db *pgxpool.Pool, emailSender auth.Emai
 	repo := svcauth.NewRepository(db)
 	svc := svcauth.NewService(repo, emailSender, cfg)
 	return &AuthHandler{
-		logger: logger,
-		svc:    svc,
-		authMW: authMW,
+		logger:     logger,
+		svc:        svc,
+		authMW:     authMW,
+		accessTTL:  cfg.JWTAccessTTL,
+		refreshTTL: cfg.JWTRefreshTTL,
 	}
+}
+
+// setAuthCookies writes the access and refresh tokens as HttpOnly cookies.
+func (h *AuthHandler) setAuthCookies(w http.ResponseWriter, r *http.Request, accessToken, refreshToken string) {
+	secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+	http.SetCookie(w, &http.Cookie{
+		Name:     "access_token",
+		Value:    accessToken,
+		Path:     "/",
+		MaxAge:   int(h.accessTTL.Seconds()),
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteStrictMode,
+	})
+	if refreshToken != "" {
+		http.SetCookie(w, &http.Cookie{
+			Name:     "refresh_token",
+			Value:    refreshToken,
+			Path:     "/api/v1/auth/refresh",
+			MaxAge:   int(h.refreshTTL.Seconds()),
+			HttpOnly: true,
+			Secure:   secure,
+			SameSite: http.SameSiteStrictMode,
+		})
+	}
+}
+
+// clearAuthCookies expires the auth cookies.
+func (h *AuthHandler) clearAuthCookies(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{Name: "access_token", Value: "", Path: "/", MaxAge: -1, HttpOnly: true})
+	http.SetCookie(w, &http.Cookie{Name: "refresh_token", Value: "", Path: "/api/v1/auth/refresh", MaxAge: -1, HttpOnly: true})
 }
 
 // WithAllowedOrigins sets the list of origins used to validate OAuth redirect URIs.
@@ -159,7 +194,8 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	_ = jwtRefreshToken // Use opaque refresh token instead
 
-	// Return JWT access token + opaque refresh token
+	h.setAuthCookies(w, r, accessToken, opaqueRefreshToken)
+
 	writeJSON(w, http.StatusCreated, RegisterResponse{
 		User:         resp.User,
 		AccessToken:  accessToken,
@@ -204,6 +240,8 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.setAuthCookies(w, r, accessToken, resp.RefreshToken)
+
 	writeJSON(w, http.StatusOK, LoginResponse{
 		User:         resp.User,
 		AccessToken:  accessToken,
@@ -215,9 +253,12 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 // POST /api/v1/auth/refresh
 func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	var req RefreshRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
-		return
+	// Body is optional — cookie is also accepted.
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	if req.RefreshToken == "" {
+		if c, err := r.Cookie("refresh_token"); err == nil {
+			req.RefreshToken = c.Value
+		}
 	}
 	if req.RefreshToken == "" {
 		writeError(w, http.StatusBadRequest, "refresh token is required")
@@ -271,6 +312,8 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.setAuthCookies(w, r, accessToken, resp.RefreshToken)
+
 	writeJSON(w, http.StatusOK, RefreshResponse{
 		AccessToken:  accessToken,
 		RefreshToken: resp.RefreshToken,
@@ -291,6 +334,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.clearAuthCookies(w)
 	writeJSON(w, http.StatusOK, map[string]string{"message": "logged out successfully"})
 }
 
@@ -362,16 +406,15 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify current password
-	_, err := h.svc.Login(r.Context(), middleware.GetUserEmail(r), req.CurrentPassword)
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "current password is incorrect")
-		return
-	}
-
-	// Reset to new password (reuse the reset flow)
-	if err := h.svc.ResetPassword(r.Context(), "", req.NewPassword); err != nil {
-		// This won't work with ResetPassword as is. Use a dedicated method.
+	if err := h.svc.ChangePassword(r.Context(), userID, req.CurrentPassword, req.NewPassword); err != nil {
+		if errors.Is(err, svcauth.ErrInvalidCredentials) {
+			writeError(w, http.StatusUnauthorized, "current password is incorrect")
+			return
+		}
+		if errors.Is(err, svcauth.ErrInvalidPassword) {
+			writeError(w, http.StatusBadRequest, "new password must be at least 8 characters")
+			return
+		}
 		h.logger.Error("change password", "error", err)
 		writeError(w, http.StatusInternalServerError, "password change failed")
 		return
@@ -522,10 +565,3 @@ func (h *AuthHandler) RevokeSession(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "session revoked"})
 }
 
-// GetUserEmail extracts the user email from context (used for password change verification).
-func GetUserEmail(r *http.Request) string {
-	if claims := middleware.GetTokenClaims(r); claims != nil {
-		return claims.Subject
-	}
-	return ""
-}

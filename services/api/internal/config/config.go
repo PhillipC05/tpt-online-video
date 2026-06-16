@@ -22,6 +22,7 @@ type Config struct {
 	PostgresDB       string
 	PostgresUser     string
 	PostgresPassword string
+	PostgresSSLMode  string
 
 	RedisAddr     string
 	RedisPassword string
@@ -81,6 +82,7 @@ func Load() (Config, error) {
 		PostgresDB:       getenv("POSTGRES_DB", "tpt"),
 		PostgresUser:     getenv("POSTGRES_USER", "tpt"),
 		PostgresPassword: getenv("POSTGRES_PASSWORD", "tpt"),
+		PostgresSSLMode:  getenv("POSTGRES_SSLMODE", "disable"),
 
 		RedisAddr:     getenv("REDIS_ADDR", "localhost:6379"),
 		RedisPassword: getenv("REDIS_PASSWORD", ""),
@@ -122,20 +124,26 @@ func Load() (Config, error) {
 		AdminDisplayName:  getenv("ADMIN_DISPLAY_NAME", "Admin"),
 	}
 
-	if cfg.JWTSecret == "change-me-in-development" && cfg.AppEnv == "production" {
-		return Config{}, fmt.Errorf("JWT_SECRET must be changed in production")
+	if cfg.AppEnv == "production" {
+		if cfg.JWTSecret == "change-me-in-development" {
+			return Config{}, fmt.Errorf("JWT_SECRET must be changed in production")
+		}
+		if cfg.LiveHookSecret == "changeme-live-hook-secret" {
+			return Config{}, fmt.Errorf("LIVE_HOOK_SECRET must be changed in production")
+		}
 	}
 
 	return cfg, nil
 }
 
 func (c Config) PostgresDSN() string {
-	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
 		c.PostgresUser,
 		c.PostgresPassword,
 		c.PostgresHost,
 		c.PostgresPort,
 		c.PostgresDB,
+		c.PostgresSSLMode,
 	)
 }
 

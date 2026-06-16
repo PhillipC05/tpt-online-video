@@ -1,0 +1,57 @@
+# TPT Online Video — Linux Configuration
+# Installed to /opt/tpt/config/config.yaml
+#
+# Placeholders replaced by setup-db.sh:
+#   {{ADMIN_EMAIL}}      — seed admin e-mail
+#   {{ADMIN_PASSWORD}}   — seed admin password
+#   {{DB_PASSWORD}}      — PostgreSQL tpt user password
+#   {{JWT_SECRET}}       — 96-char random hex string (48 bytes)
+#   {{MINIO_SECRET}}     — 64-char random hex string (32 bytes)
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+  base_url: "http://localhost:8080"
+
+database:
+  host: "localhost"
+  port: 5432
+  name: "tpt"
+  user: "tpt"
+  password: "{{DB_PASSWORD}}"
+  sslmode: "disable"
+
+redis:
+  addr: "localhost:6379"
+  password: ""
+
+storage:
+  provider: "local"
+  local:
+    path: "/opt/tpt/data/storage"
+  s3:
+    endpoint: "http://localhost:9000"
+    region: "us-east-1"
+    bucket: "tpt-media"
+    access_key: "tptminio"
+    secret_key: "{{MINIO_SECRET}}"
+
+media:
+  ffmpeg_path:  "/opt/tpt/bin/ffmpeg"
+  ffprobe_path: "/opt/tpt/bin/ffprobe"
+  tmp_dir:      "/opt/tpt/data/tmp"
+
+live:
+  mediamtx_hls_base_url:    "http://localhost:8888"
+  mediamtx_webrtc_base_url: "http://localhost:8889"
+  rtmp_base_url:             "rtmp://localhost:1935"
+  hook_secret:               "{{JWT_SECRET}}"
+  default_dvr_window_seconds: 900
+
+auth:
+  jwt_secret:      "{{JWT_SECRET}}"
+  admin_email:     "{{ADMIN_EMAIL}}"
+  admin_password:  "{{ADMIN_PASSWORD}}"
+
+app:
+  env: "production"

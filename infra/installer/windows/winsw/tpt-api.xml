@@ -1,0 +1,17 @@
+<service>
+  <id>tpt-api</id>
+  <name>tpt-api</name>
+  <displayname>TPT Online Video — API</displayname>
+  <description>TPT Online Video HTTP API service</description>
+  <executable>{{INSTALL_DIR}}\bin\tpt-api.exe</executable>
+  <arguments>serve --config "{{INSTALL_DIR}}\config\config.yaml"</arguments>
+  <logpath>{{INSTALL_DIR}}\logs\tpt-api</logpath>
+  <logmode>rotate</logmode>
+  <onfailure action="restart" delay="5 sec"/>
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="none"/>
+  <resetfailure>1 hour</resetfailure>
+  <delayedAutoStart>true</delayedAutoStart>
+  <depend>tpt-postgresql</depend>
+  <depend>tpt-redis</depend>
+</service>

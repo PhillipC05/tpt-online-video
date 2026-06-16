@@ -1,0 +1,17 @@
+[Unit]
+Description=TPT Online Video — MediaMTX Live Streaming
+After=network.target
+
+[Service]
+Type=simple
+User=tpt
+Group=tpt
+WorkingDirectory=/opt/tpt
+ExecStart=/opt/tpt/bin/mediamtx /opt/tpt/config/mediamtx.yml
+StandardOutput=append:/opt/tpt/logs/mediamtx/mediamtx.log
+StandardError=append:/opt/tpt/logs/mediamtx/mediamtx.log
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

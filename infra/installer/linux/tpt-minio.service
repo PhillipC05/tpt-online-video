@@ -1,0 +1,21 @@
+[Unit]
+Description=TPT Online Video — MinIO Object Storage
+After=network.target
+
+[Service]
+Type=simple
+User=tpt
+Group=tpt
+WorkingDirectory=/opt/tpt
+EnvironmentFile=/opt/tpt/config/minio.env
+ExecStart=/opt/tpt/bin/minio server \
+    --address :9000 \
+    --console-address :9001 \
+    /opt/tpt/data/minio
+StandardOutput=append:/opt/tpt/logs/minio/minio.log
+StandardError=append:/opt/tpt/logs/minio/minio.log
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -42,6 +42,16 @@ type Server struct {
 	rtmpBase           string
 	liveHookSecret     string
 
+	// Email
+	emailProvider    string
+	emailFromName    string
+	emailFromAddress string
+	smtpHost         string
+	smtpPort         int
+	smtpUsername     string
+	smtpPassword     string
+	smtpTLS          bool
+
 	// Live chat hub (WebSocket room manager)
 	chatHub *svclive.ChatHub
 
@@ -58,13 +68,16 @@ func NewServer(logger *slog.Logger, db *pgxpool.Pool, redis *redis.Client, store
 		search:             searchProvider,
 		queue:              media.NewQueue(redis, "transcode:queue", "transcode-workers", "api"),
 		baseURL:            baseURL,
-		jwtSecret:          "jwt-secret", // Will be overridden via WithJWTSecret
+		jwtSecret:          "", // must be set via WithJWTSecret before Routes() is called
 		jwtAccessTTL:       15 * time.Minute,
 		frontendURL:        "http://localhost:5173",
 		mediamtxHLSBase:    "http://localhost:8888",
 		mediamtxWebRTCBase: "http://localhost:8889",
 		rtmpBase:           "rtmp://localhost:1935",
 		liveHookSecret:     "changeme-live-hook-secret",
+		emailProvider:      "log",
+		emailFromName:      "TPT Online Video",
+		emailFromAddress:   "noreply@tpt.local",
 		chatHub:            svclive.NewChatHub(redis, logger),
 		apiMetrics:         middleware.NewAPIMetrics(),
 	}
@@ -86,6 +99,19 @@ func (s *Server) WithFrontendURL(url string) *Server {
 // WithCORSOrigins sets the list of allowed CORS origins.
 func (s *Server) WithCORSOrigins(origins []string) *Server {
 	s.corsOrigins = origins
+	return s
+}
+
+// WithEmailConfig wires the email provider settings from the loaded config.
+func (s *Server) WithEmailConfig(provider, fromName, fromAddr, host, username, password string, port int, tls bool) *Server {
+	s.emailProvider = provider
+	s.emailFromName = fromName
+	s.emailFromAddress = fromAddr
+	s.smtpHost = host
+	s.smtpPort = port
+	s.smtpUsername = username
+	s.smtpPassword = password
+	s.smtpTLS = tls
 	return s
 }
 
@@ -149,10 +175,15 @@ func (s *Server) Routes() http.Handler {
 
 	// Build email config and auth service
 	emailCfg := auth.EmailConfig{
-		FromName:    "TPT Online Video",
-		FromEmail:   "noreply@tpt.local",
-		Provider:    "log", // Use SMTP in production
+		FromName:    s.emailFromName,
+		FromEmail:   s.emailFromAddress,
+		Provider:    s.emailProvider,
 		AppBaseURL:  s.baseURL,
+		SMTPHost:    s.smtpHost,
+		SMTPPort:    s.smtpPort,
+		SMTPUsername: s.smtpUsername,
+		SMTPPassword: s.smtpPassword,
+		SMTPTLS:     s.smtpTLS,
 	}
 
 	authSvcCfg := svcauth.ServiceConfig{

@@ -1,0 +1,21 @@
+[Unit]
+Description=TPT Online Video — Redis
+After=network.target
+
+[Service]
+Type=forking
+User=tpt
+Group=tpt
+ExecStart=/opt/tpt/bin/redis-server /opt/tpt/config/redis.conf \
+    --daemonize yes \
+    --pidfile /opt/tpt/data/redis/redis.pid \
+    --logfile /opt/tpt/logs/redis/redis.log
+ExecStop=/opt/tpt/bin/redis-cli -p 6379 shutdown
+PIDFile=/opt/tpt/data/redis/redis.pid
+TimeoutStartSec=30
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

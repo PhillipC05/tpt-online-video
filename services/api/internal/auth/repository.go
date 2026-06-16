@@ -228,6 +228,21 @@ func (r *Repository) RevokeRefreshToken(ctx context.Context, id string) error {
 	return err
 }
 
+func (r *Repository) RevokeRefreshTokenForUser(ctx context.Context, userID, id string) error {
+	now := time.Now()
+	tag, err := r.db.Exec(ctx,
+		`UPDATE refresh_tokens SET revoked_at = $1 WHERE id = $2 AND user_id = $3`,
+		now, id, userID,
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
 func (r *Repository) RevokeRefreshTokenFamily(ctx context.Context, familyID string) error {
 	now := time.Now()
 	_, err := r.db.Exec(ctx,

@@ -1,0 +1,55 @@
+# TPT Online Video — MediaMTX configuration
+# Installed to /opt/tpt/config/mediamtx.yml
+# See: https://github.com/bluenviron/mediamtx
+
+logLevel: info
+logDestinations: [file]
+logFile: /opt/tpt/logs/mediamtx/mediamtx.log
+
+# RTMP ingest (OBS, etc.)
+rtmp: yes
+rtmpAddress: :1935
+rtmpEncryption: no
+
+# HLS output
+hls: yes
+hlsAddress: :8888
+hlsAllowOrigin: "*"
+hlsSegmentCount: 7
+hlsSegmentDuration: 1s
+hlsPartDuration: 200ms
+hlsDirectory: /opt/tpt/data/hls
+
+# WebRTC output
+webrtc: yes
+webrtcAddress: :8889
+webrtcAllowOrigin: "*"
+webrtcICEServers2: []
+
+# API for tpt-live hooks
+api: yes
+apiAddress: 127.0.0.1:9997
+
+# Disable unused protocols
+rtsp: no
+rtsps: no
+srt: no
+
+# Default path settings
+pathDefaults:
+  source: publisher
+  record: no
+
+  # tpt-live hook — called on stream publish/read events
+  runOnPublish:    ""
+  runOnRead:       ""
+  runOnUnpublish:  ""
+
+  # Require stream key authentication (tpt-live validates via hook)
+  publishUser:    ""
+  publishPass:    ""
+  readUser:       ""
+  readPass:       ""
+
+paths:
+  all_others:

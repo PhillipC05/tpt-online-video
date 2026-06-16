@@ -2,6 +2,7 @@
   "name": "tpt-online-video",
   "version": "0.1.0",
   "private": true,
+  "license": "Apache-2.0",
   "scripts": {
     "dev": "pnpm --filter @tpt/web dev",
     "build": "pnpm --filter @tpt/web build",

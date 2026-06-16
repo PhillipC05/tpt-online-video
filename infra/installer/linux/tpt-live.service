@@ -1,18 +1,17 @@
 [Unit]
-Description=TPT Online Video — Live Helper Service
-After=network.target redis.service
-Wants=redis.service
+Description=TPT Online Video — Live Streaming Helper
+After=network.target tpt-postgresql.service tpt-redis.service tpt-mediamtx.service
+Requires=tpt-postgresql.service tpt-redis.service
 
 [Service]
 Type=simple
 User=tpt
 Group=tpt
 WorkingDirectory=/opt/tpt
-ExecStart=/opt/tpt/bin/tpt-live
+ExecStart=/opt/tpt/bin/tpt-live --config /opt/tpt/config/config.yaml
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=65536
-Environment=TPT_CONFIG=/opt/tpt/config/config.yaml
 
 [Install]
 WantedBy=multi-user.target

@@ -1,0 +1,16 @@
+<service>
+  <id>tpt-live</id>
+  <name>tpt-live</name>
+  <displayname>TPT Online Video — Live</displayname>
+  <description>TPT Online Video live-streaming helper service (MediaMTX hook handler)</description>
+  <executable>{{INSTALL_DIR}}\bin\tpt-live.exe</executable>
+  <arguments>--config "{{INSTALL_DIR}}\config\config.yaml"</arguments>
+  <logpath>{{INSTALL_DIR}}\logs\tpt-live</logpath>
+  <logmode>rotate</logmode>
+  <onfailure action="restart" delay="5 sec"/>
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="none"/>
+  <resetfailure>1 hour</resetfailure>
+  <delayedAutoStart>true</delayedAutoStart>
+  <depend>tpt-api</depend>
+</service>

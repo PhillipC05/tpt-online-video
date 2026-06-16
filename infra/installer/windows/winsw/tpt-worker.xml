@@ -1,0 +1,16 @@
+<service>
+  <id>tpt-worker</id>
+  <name>tpt-worker</name>
+  <displayname>TPT Online Video — Worker</displayname>
+  <description>TPT Online Video transcoding and background job worker</description>
+  <executable>{{INSTALL_DIR}}\bin\tpt-worker.exe</executable>
+  <arguments>--config "{{INSTALL_DIR}}\config\config.yaml"</arguments>
+  <logpath>{{INSTALL_DIR}}\logs\tpt-worker</logpath>
+  <logmode>rotate</logmode>
+  <onfailure action="restart" delay="5 sec"/>
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="none"/>
+  <resetfailure>1 hour</resetfailure>
+  <delayedAutoStart>true</delayedAutoStart>
+  <depend>tpt-api</depend>
+</service>

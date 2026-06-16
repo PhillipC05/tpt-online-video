@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/tpt-online-video/packages/auth"
 	"github.com/tpt-online-video/packages/search"
 	"github.com/tpt-online-video/packages/storage"
 	svcauth "github.com/tpt-online-video/services/api/internal/auth"
@@ -61,7 +62,8 @@ func main() {
 		WithJWTSecret(cfg.JWTSecret, cfg.JWTAccessTTL).
 		WithFrontendURL(cfg.FrontendBaseURL).
 		WithCORSOrigins(cfg.CORSOrigins).
-		WithLiveConfig(cfg.MediaMTXHLSBaseURL, cfg.MediaMTXWebRTCBaseURL, cfg.RTMPBaseURL, cfg.LiveHookSecret, cfg.MediaMTXHLSDirectory)
+		WithLiveConfig(cfg.MediaMTXHLSBaseURL, cfg.MediaMTXWebRTCBaseURL, cfg.RTMPBaseURL, cfg.LiveHookSecret, cfg.MediaMTXHLSDirectory).
+		WithEmailConfig(cfg.EmailProvider, cfg.EmailFromName, cfg.EmailFromAddress, cfg.SMTPHost, cfg.SMTPUsername, cfg.SMTPPassword, cfg.SMTPPort, cfg.SMTPTLS)
 
 	if err := srv.EnsureQueueGroup(ctx); err != nil {
 		logger.Error("ensure queue group", "error", err)

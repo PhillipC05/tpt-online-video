@@ -105,7 +105,7 @@ Goal: Build a public, self-hostable, open-source YouTube-like platform with VOD,
   - [x] Live streaming links
   - [x] Moderation links
   - [x] Contributing links
-- [x] Add `LICENSE` with MIT license text
+- [x] Add `LICENSE` with Apache 2.0 license text
 - [x] Add `.gitignore`
 - [x] Add `.editorconfig`
 - [x] Add root `Makefile` or task runner scripts
@@ -819,97 +819,97 @@ Goal: Build a public, self-hostable, open-source YouTube-like platform with VOD,
 
 ## Phase 26 — Testing
 
-- [ ] Add backend unit tests
-- [ ] Add backend integration tests
-- [ ] Add storage provider tests
-- [ ] Add search provider tests
-- [ ] Add auth tests
-- [ ] Add upload tests
-- [ ] Add transcoding worker tests
-- [ ] Add moderation tests
-- [ ] Add live service tests
-- [ ] Add frontend unit tests
-- [ ] Add frontend component tests
+- [x] Add backend unit tests
+- [x] Add backend integration tests
+- [x] Add storage provider tests
+- [x] Add search provider tests
+- [x] Add auth tests
+- [x] Add upload tests
+- [x] Add transcoding worker tests
+- [x] Add moderation tests
+- [x] Add live service tests
+- [x] Add frontend unit tests
+- [x] Add frontend component tests
 - [ ] Add end-to-end tests later
-- [ ] Add sample media fixtures
+- [x] Add sample media fixtures
 - [ ] Add testcontainers setup later
 
 ## Phase 27 — Documentation (continued)
 
-- [ ] Write `docs/installer.md`
-- [ ] Write `docs/security.md`
-- [ ] Write `docs/testing.md`
-- [ ] Add API documentation
-- [ ] Add admin user guide
-- [ ] Add broadcaster guide
-- [ ] Add moderator guide
-- [ ] Add maintainer guide
+- [x] Write `docs/installer.md`
+- [x] Write `docs/security.md`
+- [x] Write `docs/testing.md`
+- [x] Add API documentation
+- [x] Add admin user guide
+- [x] Add broadcaster guide
+- [x] Add moderator guide
+- [x] Add maintainer guide
 
 ## Phase 28 — Windows Self-Contained Installer (continued)
 
-- [ ] Choose installer technology
-  - [ ] Inno Setup
-  - [ ] WiX
-  - [ ] Tauri bundler if suitable
-- [ ] Package frontend static assets
-- [ ] Package Go API binary
-- [ ] Package Go worker binary
-- [ ] Package live helper binary
-- [ ] Package PostgreSQL
-- [ ] Package Redis
-- [ ] Package MinIO
-- [ ] Package FFmpeg
-- [ ] Package MediaMTX
-- [ ] Package cache layer
-- [ ] Configure Windows services
-  - [ ] PostgreSQL
-  - [ ] Redis
-  - [ ] MinIO
-  - [ ] TPT API
-  - [ ] TPT Worker
-  - [ ] MediaMTX
-- [ ] Configure data directories
-- [ ] Configure logs directory
-- [ ] Configure environment files
-- [ ] Configure firewall rules if needed
-- [ ] Add installer health check
-- [ ] Add uninstaller cleanup
-- [ ] Add upgrade path
+- [x] Choose installer technology
+  - [x] Inno Setup (`infra/installer/windows/tpt-setup.iss`)
+  - [ ] ~~WiX~~
+  - [ ] ~~Tauri bundler if suitable~~
+- [x] Package frontend static assets (bundled via Inno Setup `[Files]`)
+- [x] Package Go API binary
+- [x] Package Go worker binary
+- [x] Package live helper binary
+- [x] Package PostgreSQL (portable binaries via `deps\pgsql\`)
+- [x] Package Redis (tporadowski Windows port via `deps\redis\`)
+- [x] Package MinIO (single binary via `deps\minio\`)
+- [x] Package FFmpeg (portable via `deps\ffmpeg\`)
+- [x] Package MediaMTX (single binary via `deps\mediamtx\`)
+- [x] Package cache layer (Redis bundled as above)
+- [x] Configure Windows services
+  - [x] PostgreSQL (`pg_ctl register` in `setup-db.ps1`)
+  - [x] Redis (`redis-server --service-install` in `setup-db.ps1`)
+  - [x] MinIO (`winsw\tpt-minio.xml`)
+  - [x] TPT API (`winsw\tpt-api.xml`)
+  - [x] TPT Worker (`winsw\tpt-worker.xml`)
+  - [x] MediaMTX (started externally; mediamtx.yml bundled in config)
+- [x] Configure data directories (`{app}\data\{storage,tmp,pgsql,redis,minio}`)
+- [x] Configure logs directory (`{app}\logs\{tpt-api,tpt-worker,tpt-live,minio}`)
+- [x] Configure environment files (`config.windows.yaml` written by setup-db.ps1)
+- [x] Configure firewall rules if needed (`netsh` rules in `[Run]` section)
+- [x] Add installer health check (`healthcheck.ps1`)
+- [x] Add uninstaller cleanup (`uninstall.ps1` + Inno Setup `[UninstallRun]`)
+- [x] Add upgrade path (`upgrade.ps1`)
 - [ ] Test on Windows 10/11
-- [ ] Write Windows installer documentation
+- [x] Write Windows installer documentation (`docs/installer.md` Method 3)
 
 ## Phase 29 — Linux Self-Contained Installer (continued)
 
-- [ ] Choose installer technology
+- [x] Choose installer technology — shell script + self-contained tarball (mirrors Windows approach)
   - [ ] `.deb`
   - [ ] `.rpm`
   - [ ] AppImage
-  - [ ] Shell installer
-- [ ] Package frontend static assets
-- [ ] Package Go API binary
-- [ ] Package Go worker binary
-- [ ] Package live helper binary
-- [ ] Package PostgreSQL
-- [ ] Package Redis
-- [ ] Package MinIO
-- [ ] Package FFmpeg
-- [ ] Package MediaMTX
-- [ ] Package Nginx cache layer
-- [ ] Configure systemd services
-  - [ ] PostgreSQL
-  - [ ] Redis
-  - [ ] MinIO
-  - [ ] TPT API
-  - [ ] TPT Worker
-  - [ ] MediaMTX
-  - [ ] Nginx
-- [ ] Configure data directories
-- [ ] Configure logs directory
-- [ ] Configure environment files
-- [ ] Configure firewall rules if needed
-- [ ] Add installer health check
-- [ ] Add uninstaller cleanup
-- [ ] Add upgrade path
+  - [x] Shell installer (`install.sh`)
+- [x] Package frontend static assets (bundled in tarball via `build-installer.sh`)
+- [x] Package Go API binary (`build-installer.sh` builds `tpt-api` linux/amd64)
+- [x] Package Go worker binary (`build-installer.sh` builds `tpt-worker` linux/amd64)
+- [x] Package live helper binary (`build-installer.sh` builds `tpt-live` linux/amd64)
+- [x] Package PostgreSQL (bundled via `fetch-deps.sh` — PGDG or embedded-postgres-binaries)
+- [x] Package Redis (bundled static build via `fetch-deps.sh`)
+- [x] Package MinIO (bundled static Go binary via `fetch-deps.sh`)
+- [x] Package FFmpeg (bundled static build from johnvansickle.com via `fetch-deps.sh`)
+- [x] Package MediaMTX (bundled static Go binary via `fetch-deps.sh`)
+- [x] Package Nginx cache layer (`nginx.conf` site config; system Nginx installed by `install.sh`)
+- [x] Configure systemd services
+  - [x] PostgreSQL (`tpt-postgresql.service` — pg_ctl, Type=forking)
+  - [x] Redis (`tpt-redis.service`)
+  - [x] MinIO (`tpt-minio.service`)
+  - [x] TPT API (`tpt-api.service`)
+  - [x] TPT Worker (`tpt-worker.service`)
+  - [x] MediaMTX (`tpt-mediamtx.service`)
+  - [x] Nginx (system service configured by `install.sh`)
+- [x] Configure data directories (`/opt/tpt/data/{storage,pgsql,redis,minio,hls,tmp,nginx-cache}`)
+- [x] Configure logs directory (`/opt/tpt/logs/{postgresql,redis,minio,mediamtx}`)
+- [x] Configure environment files (`config.yaml`, `minio.env` written by `setup-db.sh`)
+- [x] Configure firewall rules if needed (ufw/firewalld support in `install.sh`)
+- [x] Add installer health check (`healthcheck.sh`)
+- [x] Add uninstaller cleanup (`uninstall.sh` — preserves data by default, `--purge-data` to remove)
+- [x] Add upgrade path (`upgrade.sh`)
 - [ ] Test on Ubuntu/Debian
 - [ ] Test on Fedora/RHEL if feasible
 - [ ] Write Linux installer documentation
@@ -937,7 +937,7 @@ Goal: Build a public, self-hostable, open-source YouTube-like platform with VOD,
 - [ ] Verify Windows installer works
 - [ ] Verify Linux installer works
 - [ ] Verify documentation is complete
-- [ ] Verify MIT license is present
+- [ ] Verify Apache 2.0 license is present
 - [ ] Prepare public release notes
 - [ ] Prepare demo seed data
 - [ ] Prepare screenshots/screenshare/demo script
@@ -946,7 +946,7 @@ Goal: Build a public, self-hostable, open-source YouTube-like platform with VOD,
 
 # Public v1 Acceptance Criteria
 
-- [ ] MIT license exists
+- [ ] Apache 2.0 license exists
 - [ ] Repository has comprehensive documentation
 - [ ] Docker Compose starts the core stack
 - [ ] Docker Compose production stack starts all services
@@ -1052,7 +1052,7 @@ Goal: Build a public, self-hostable, open-source YouTube-like platform with VOD,
 # Current Next Tasks
 
 - [x] Repository root structure
-- [x] MIT license
+- [x] Apache 2.0 license
 - [x] README with deployment guides table and single-command quick start
 - [x] Makefile / task runner
 - [x] Architecture documentation and diagrams

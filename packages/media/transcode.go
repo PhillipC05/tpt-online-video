@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"mime"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
@@ -300,28 +302,37 @@ func ExtractSubtitles(inputPath, destPath string) error {
 	return nil
 }
 
-// UploadHLSRenditions uploads all HLS files from a local output directory to storage.
+// UploadHLSRenditions walks outputDir and uploads every file to storage under
+// hls/<videoID>/<relPath>. It is safe to call concurrently for different videoIDs.
 func UploadHLSRenditions(ctx context.Context, store storage.Provider, bucket, outputDir, videoID string) error {
-	// This is a simplified stub - in production, walk the directory and upload each file.
-	// The worker should generate the master playlist and upload it.
-	cmd := exec.Command("find", outputDir, "-type", "f")
-	out, err := cmd.Output()
-	if err != nil {
-		return fmt.Errorf("list HLS files: %w", err)
-	}
-
-	files := strings.Split(strings.TrimSpace(string(out)), "\n")
-	for _, file := range files {
-		if file == "" {
-			continue
+	return filepath.Walk(outputDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
 		}
-		// Upload each HLS file to storage
-		relPath := strings.TrimPrefix(file, outputDir+"/")
-		key := fmt.Sprintf("hls/%s/%s", videoID, relPath)
+		if info.IsDir() {
+			return nil
+		}
 
-		// We'd use os.Open + store.PutObject here
-		_ = key
-		_ = bucket
-	}
-	return nil
+		rel, err := filepath.Rel(outputDir, path)
+		if err != nil {
+			return fmt.Errorf("rel path: %w", err)
+		}
+		key := "hls/" + videoID + "/" + filepath.ToSlash(rel)
+
+		ct := mime.TypeByExtension(filepath.Ext(path))
+		if ct == "" {
+			ct = "application/octet-stream"
+		}
+
+		f, err := os.Open(path)
+		if err != nil {
+			return fmt.Errorf("open %s: %w", path, err)
+		}
+		defer f.Close()
+
+		if err := store.PutObject(ctx, bucket, key, f, info.Size(), ct); err != nil {
+			return fmt.Errorf("upload %s: %w", key, err)
+		}
+		return nil
+	})
 }

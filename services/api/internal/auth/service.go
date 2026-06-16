@@ -278,9 +278,10 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) error 
 		return fmt.Errorf("store reset token: %w", err)
 	}
 
-	// Build reset URL
-	resetURL := fmt.Sprintf("%s/reset-password?token=%s&email=%s",
-		s.config.FrontendBaseURL, resetToken, email)
+	// Build reset URL — token alone is sufficient; email is not included to avoid
+	// leaking it in browser history, logs, or Referer headers.
+	resetURL := fmt.Sprintf("%s/reset-password?token=%s",
+		s.config.FrontendBaseURL, resetToken)
 
 	// Send email (best-effort)
 	_ = s.emailSender.SendPasswordResetEmail(ctx, email, resetURL)
@@ -328,6 +329,37 @@ func (s *Service) ResetPassword(ctx context.Context, token, newPassword string) 
 	// Revoke all refresh tokens for security
 	_ = s.repo.RevokeAllUserRefreshTokens(ctx, prt.UserID)
 
+	return nil
+}
+
+// ChangePassword verifies the user's current password and updates it to newPassword.
+func (s *Service) ChangePassword(ctx context.Context, userID, currentPassword, newPassword string) error {
+	if len(newPassword) < 8 {
+		return ErrInvalidPassword
+	}
+
+	user, err := s.repo.GetUserByID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("get user: %w", err)
+	}
+	if user == nil {
+		return ErrUserNotFound
+	}
+
+	if err := s.hasher.Compare(user.PasswordHash, currentPassword); err != nil {
+		return ErrInvalidCredentials
+	}
+
+	newHash, err := s.hasher.Hash(newPassword)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+
+	if err := s.repo.UpdateUserPassword(ctx, userID, newHash); err != nil {
+		return fmt.Errorf("update password: %w", err)
+	}
+
+	_ = s.repo.RevokeAllUserRefreshTokens(ctx, userID)
 	return nil
 }
 
@@ -497,9 +529,9 @@ func (s *Service) GetActiveSessions(ctx context.Context, userID string) ([]*Refr
 	return sessions, nil
 }
 
-// RevokeSession revokes a specific session by ID.
+// RevokeSession revokes a specific session by ID, verifying it belongs to userID.
 func (s *Service) RevokeSession(ctx context.Context, userID, sessionID string) error {
-	return s.repo.RevokeRefreshToken(ctx, sessionID)
+	return s.repo.RevokeRefreshTokenForUser(ctx, userID, sessionID)
 }
 
 // StoreRefreshToken stores a refresh token in the database.

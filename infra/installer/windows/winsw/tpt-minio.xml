@@ -1,0 +1,17 @@
+<service>
+  <id>tpt-minio</id>
+  <name>tpt-minio</name>
+  <displayname>TPT Online Video — MinIO</displayname>
+  <description>MinIO object storage for TPT Online Video media files</description>
+  <executable>{{INSTALL_DIR}}\bin\minio.exe</executable>
+  <arguments>server --address :9000 --console-address :9001 "{{INSTALL_DIR}}\data\minio"</arguments>
+  <logpath>{{INSTALL_DIR}}\logs\minio</logpath>
+  <logmode>rotate</logmode>
+  <onfailure action="restart" delay="5 sec"/>
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="none"/>
+  <resetfailure>1 hour</resetfailure>
+  <delayedAutoStart>true</delayedAutoStart>
+  <env name="MINIO_ROOT_USER"     value="tptminio"/>
+  <env name="MINIO_ROOT_PASSWORD" value="REPLACE_WITH_STRONG_PASSWORD"/>
+</service>

@@ -1,0 +1,25 @@
+[Unit]
+Description=TPT Online Video — PostgreSQL Database
+After=network.target
+
+[Service]
+Type=forking
+User=tpt
+Group=tpt
+OOMScoreAdjust=-900
+Environment=PGDATA=/opt/tpt/data/pgsql
+Environment=LD_LIBRARY_PATH=/opt/tpt/pgsql/lib
+ExecStart=/opt/tpt/pgsql/bin/pg_ctl start \
+    -D /opt/tpt/data/pgsql \
+    -l /opt/tpt/logs/postgresql/postgresql.log \
+    -w -t 300
+ExecStop=/opt/tpt/pgsql/bin/pg_ctl stop -D /opt/tpt/data/pgsql -m fast
+ExecReload=/opt/tpt/pgsql/bin/pg_ctl reload -D /opt/tpt/data/pgsql
+PIDFile=/opt/tpt/data/pgsql/postmaster.pid
+TimeoutStartSec=300
+TimeoutStopSec=120
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

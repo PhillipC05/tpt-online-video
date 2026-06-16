@@ -77,9 +77,6 @@ func (h *PasswordHasher) Compare(password, encodedHash string) bool {
 	}
 
 	otherHash := argon2.IDKey([]byte(password), decodedSalt, parts.iterations, parts.memory, parts.parallelism, uint32(len(decodedHash)))
-	decodedHash64 := make([]byte, base64.RawStdEncoding.DecodedLen(len(encodedHash)))
-	base64.RawStdEncoding.Decode(decodedHash64, decodedHash)
-
 	return subtle.ConstantTimeCompare(otherHash, decodedHash) == 1
 }
 
