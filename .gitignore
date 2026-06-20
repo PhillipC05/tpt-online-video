@@ -55,3 +55,5 @@ installers/
 *.mkv
 *.ts
 *.m3u8
+# TPT Code Command Center — contains API keys and session token
+.vscode/settings.json
